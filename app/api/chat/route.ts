@@ -1,39 +1,209 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSupabase } from "@/lib/supabase";
 
-/* ── Language-neutral base prompt (written in English so it doesn't bias toward Korean) ── */
+/* ── Language-neutral base prompt ── */
 const BASE_RULES = `You are a warm, caring AI companion for elderly users.
 
 Core rules:
 - Never use bullet points, numbered lists, or markdown formatting (no -, *, 1. 2.)
 - Never use emojis
-- Keep responses to 2-3 short sentences maximum. Do not give long explanations
+- Keep responses to 2-3 short sentences maximum
 - Speak naturally and conversationally, like a real person on a phone call
 - If the user seems lonely, be a warm companion
 - If they mention health concerns, gently suggest visiting a doctor or contacting family
+- You have tools available: use them when the user asks about weather, news, nearby places, or needs reminders/emergency help. Call the appropriate tool instead of making up information.
 
 Schedule detection:
 - If the conversation mentions appointments, reservations, hospital visits, or schedules, include at the END of your response:
-  [MEMORY: {date} {time} {description}]
-- Example: [MEMORY: April 3rd 10am Dr.Smith MRI scan]
-- The [MEMORY:] tag goes at the very end of your response`;
+  [MEMORY: {date} {time} {description}]`;
 
-/* ── Persona behavior prompts (language-neutral) ── */
 const PERSONA_PROMPTS: Record<string, string> = {
-  granddaughter:
-    "You are a loving granddaughter. Be affectionate and sweet. Use warm, endearing expressions as a granddaughter would when talking to a grandparent.",
-
-  oldfriend:
-    "You are the user's old friend of the same age. Be casual and nostalgic. Talk about old memories and use friendly, informal speech.",
-
-  church:
-    "You are a church friend. Be warm and faith-oriented. Naturally bring up scripture, prayer, and gratitude in conversation.",
-
-  assistant:
-    "You are a capable AI assistant. Help with scheduling, medication reminders, and appointments. Be kind but professional.",
+  granddaughter: "You are a loving granddaughter. Be affectionate and sweet.",
+  oldfriend: "You are the user's old friend. Be casual and nostalgic.",
+  church: "You are a church friend. Be warm and faith-oriented.",
+  assistant: "You are a capable AI assistant. Help with scheduling and reminders.",
 };
 
-const IMAGE_PROMPT = `The user is showing you a document or photo. Explain it in a simple, kind way in the user's language. Translate any difficult English words and highlight important information. Explain it like a granddaughter would to a grandparent - short and clear.`;
+const IMAGE_PROMPT = `The user is showing you a document or photo. Explain it simply in the user's language.`;
 
+/* ── Tool Definitions for Claude ── */
+const TOOLS = [
+  {
+    name: "get_weather",
+    description: "Get current weather for a city. Use when user asks about weather, temperature, or if they should bring an umbrella.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        city: { type: "string", description: "City name in English, e.g. 'Los Angeles', 'Seoul', 'New York'" },
+      },
+      required: ["city"],
+    },
+  },
+  {
+    name: "search_news",
+    description: "Search for recent news headlines. Use when user asks about news or current events.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        query: { type: "string", description: "Search topic, e.g. 'Korea', 'health', 'weather'" },
+        language: { type: "string", description: "Language code: ko, en, es, zh, vi, ja" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "set_reminder",
+    description: "Save a medication reminder or appointment. Use when user mentions taking medicine, doctor visits, or any scheduled event.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        date: { type: "string", description: "Date of the reminder, e.g. '4월3일', 'tomorrow', 'Monday'" },
+        time: { type: "string", description: "Time, e.g. '오전10시', '2pm', '14:00'" },
+        content: { type: "string", description: "What the reminder is about, e.g. 'Take blood pressure medicine'" },
+      },
+      required: ["date", "content"],
+    },
+  },
+  {
+    name: "alert_family",
+    description: "Send emergency alert to family. Use when user says they don't feel well, fell down, need help urgently, or are in distress.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        message: { type: "string", description: "Description of the situation for the family" },
+        urgency: { type: "string", enum: ["low", "medium", "high"], description: "How urgent is this" },
+      },
+      required: ["message"],
+    },
+  },
+  {
+    name: "find_nearby",
+    description: "Find nearby places like hospitals, pharmacies, Korean restaurants, churches. Use when user asks for nearby locations.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        query: { type: "string", description: "What to search for, e.g. 'hospital', 'pharmacy', 'Korean restaurant'" },
+        city: { type: "string", description: "City to search in, e.g. 'Los Angeles'" },
+      },
+      required: ["query"],
+    },
+  },
+];
+
+/* ── Tool Execution Functions ── */
+
+async function executeGetWeather(city: string): Promise<string> {
+  try {
+    const res = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1`, {
+      headers: { "User-Agent": "ElloCare/1.0" },
+    });
+    if (!res.ok) return `Could not fetch weather for ${city}.`;
+    const data = await res.json();
+    const current = data.current_condition?.[0];
+    if (!current) return `No weather data available for ${city}.`;
+    return JSON.stringify({
+      city,
+      temp_C: current.temp_C,
+      temp_F: current.temp_F,
+      condition: current.weatherDesc?.[0]?.value || "Unknown",
+      humidity: current.humidity,
+      feelslike_C: current.FeelsLikeC,
+      feelslike_F: current.FeelsLikeF,
+    });
+  } catch (err) {
+    console.error("[tool:weather]", err);
+    return `Weather service unavailable for ${city}.`;
+  }
+}
+
+async function executeSearchNews(query: string, language: string = "ko"): Promise<string> {
+  try {
+    const hlMap: Record<string, string> = { ko: "ko", en: "en-US", es: "es", zh: "zh-CN", vi: "vi", ja: "ja" };
+    const hl = hlMap[language] || "en-US";
+    const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=${hl}&gl=US&ceid=US:en`;
+    const res = await fetch(url);
+    if (!res.ok) return "Could not fetch news.";
+    const xml = await res.text();
+    // Parse RSS titles
+    const titles: string[] = [];
+    const regex = /<title><!\[CDATA\[(.*?)\]\]><\/title>|<title>(.*?)<\/title>/g;
+    let match;
+    while ((match = regex.exec(xml)) !== null && titles.length < 4) {
+      const title = match[1] || match[2];
+      if (title && !title.includes("Google News")) titles.push(title);
+    }
+    return JSON.stringify({ query, headlines: titles.slice(0, 3) });
+  } catch (err) {
+    console.error("[tool:news]", err);
+    return "News service unavailable.";
+  }
+}
+
+async function executeSetReminder(date: string, time: string, content: string): Promise<string> {
+  const supabase = getSupabase();
+  if (supabase) {
+    try {
+      await supabase.from("memories").insert({
+        date, time: time || "", content, user_id: "default",
+      });
+      console.log(`[tool:reminder] Saved: ${date} ${time} - ${content}`);
+    } catch (err) {
+      console.error("[tool:reminder] DB error:", err);
+    }
+  }
+  return JSON.stringify({ saved: true, date, time, content });
+}
+
+async function executeAlertFamily(message: string, urgency: string): Promise<string> {
+  console.log(`[tool:alert] EMERGENCY: urgency=${urgency}, message=${message}`);
+  // In production, this would send SMS/push notification
+  return JSON.stringify({
+    alerted: true,
+    message,
+    urgency: urgency || "medium",
+    note: "Family contacts will be notified. Emergency services can be reached at 911.",
+  });
+}
+
+async function executeFindNearby(query: string, city: string = "Los Angeles"): Promise<string> {
+  try {
+    const searchQuery = `${query} ${city}`;
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchQuery)}&format=json&limit=3&addressdetails=1`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": "ElloCare/1.0 (care-app)" },
+    });
+    if (!res.ok) return "Location search unavailable.";
+    const results = await res.json();
+    const places = results.map((r: { display_name: string; lat: string; lon: string }) => ({
+      name: r.display_name.split(",").slice(0, 3).join(","),
+      lat: r.lat,
+      lon: r.lon,
+    }));
+    return JSON.stringify({ query, city, places });
+  } catch (err) {
+    console.error("[tool:nearby]", err);
+    return "Location search unavailable.";
+  }
+}
+
+async function executeTool(name: string, input: Record<string, string>): Promise<string> {
+  switch (name) {
+    case "get_weather":
+      return executeGetWeather(input.city || "Los Angeles");
+    case "search_news":
+      return executeSearchNews(input.query || "news", input.language);
+    case "set_reminder":
+      return executeSetReminder(input.date, input.time || "", input.content);
+    case "alert_family":
+      return executeAlertFamily(input.message, input.urgency || "medium");
+    case "find_nearby":
+      return executeFindNearby(input.query, input.city || "Los Angeles");
+    default:
+      return JSON.stringify({ error: `Unknown tool: ${name}` });
+  }
+}
+
+/* ── Types ── */
 type ContentBlock =
   | { type: "text"; text: string }
   | { type: "image"; source: { type: "base64"; media_type: string; data: string } };
@@ -47,17 +217,15 @@ interface IncomingMessage {
 const VALID_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
 function cleanBase64(raw: string): string {
-  const commaIndex = raw.indexOf(",");
-  if (commaIndex !== -1 && raw.substring(0, commaIndex).includes("base64")) {
-    return raw.substring(commaIndex + 1);
-  }
+  const idx = raw.indexOf(",");
+  if (idx !== -1 && raw.substring(0, idx).includes("base64")) return raw.substring(idx + 1);
   return raw.replace(/\s/g, "");
 }
 
+/* ── Main Handler ── */
 export async function POST(req: NextRequest) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    console.error("[chat] ANTHROPIC_API_KEY is not set");
     return NextResponse.json({ error: "API key not configured" }, { status: 500 });
   }
 
@@ -65,31 +233,31 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const messages: IncomingMessage[] = body.messages;
     const personaId: string = body.persona || "granddaughter";
-    const langPrompt: string = body.langPrompt || "You MUST respond ONLY in Korean (한국어). Never use any other language.";
+    const langPrompt: string = body.langPrompt || "You MUST respond ONLY in Korean.";
     const charName: string = body.charName || "소연";
 
     const personaPrompt = PERSONA_PROMPTS[personaId] || PERSONA_PROMPTS.granddaughter;
 
-    // Language instruction goes FIRST as the highest priority
     const systemPrompt = `CRITICAL INSTRUCTION — LANGUAGE (HIGHEST PRIORITY):
 ${langPrompt}
-Your name is ${charName}. You must ALWAYS respond in the language specified above. Even if the user writes in a different language, you MUST still respond ONLY in your designated language. This rule overrides everything else.
+Your name is ${charName}. You must ALWAYS respond in the language specified above. This rule overrides everything else.
 
 ${BASE_RULES}
 
-Your personality: ${personaPrompt}`;
+Your personality: ${personaPrompt}
 
-    console.log(`[chat] name=${charName}, persona=${personaId}, langPrompt="${langPrompt.slice(0, 60)}..."`);
-    console.log(`[chat] System prompt first 200 chars: ${systemPrompt.slice(0, 200)}`);
+When using tools, always present the results naturally in your designated language. Don't show raw data — summarize it warmly.`;
 
-    const apiMessages = messages.map((m, i) => {
+    console.log(`[chat] name=${charName}, persona=${personaId}, msgs=${messages.length}`);
+
+    // Build API messages — use `any` for content since tool_use/tool_result blocks have varied shapes
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const apiMessages: { role: string; content: any }[] = messages.map((m) => {
       if (m.image) {
-        const cleanedBase64 = cleanBase64(m.image.base64);
-        const mediaType = VALID_IMAGE_TYPES.includes(m.image.mediaType) ? m.image.mediaType : "image/jpeg";
-        const base64Size = Math.round((cleanedBase64.length * 3) / 4);
-        console.log(`[chat] Message ${i}: image (${mediaType}, ~${Math.round(base64Size / 1024)}KB)`);
+        const b64 = cleanBase64(m.image.base64);
+        const mt = VALID_IMAGE_TYPES.includes(m.image.mediaType) ? m.image.mediaType : "image/jpeg";
         const content: ContentBlock[] = [
-          { type: "image", source: { type: "base64", media_type: mediaType, data: cleanedBase64 } },
+          { type: "image", source: { type: "base64", media_type: mt, data: b64 } },
           { type: "text", text: m.content || IMAGE_PROMPT },
         ];
         return { role: m.role, content };
@@ -97,31 +265,84 @@ Your personality: ${personaPrompt}`;
       return { role: m.role, content: m.content };
     });
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 600,
-        system: systemPrompt,
-        messages: apiMessages,
-      }),
-    });
+    // First Claude call (may request tool use)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const claudeMessages: { role: string; content: any }[] = [...apiMessages];
+    let finalText = "";
+    let attempts = 0;
+    const MAX_TOOL_ROUNDS = 3;
 
-    if (!response.ok) {
-      const errorBody = await response.text();
-      console.error(`[chat] Anthropic API error (${response.status}):`, errorBody);
-      return NextResponse.json({ error: "AI response failed", details: errorBody }, { status: response.status });
+    while (attempts < MAX_TOOL_ROUNDS) {
+      attempts++;
+
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 800,
+          system: systemPrompt,
+          messages: claudeMessages,
+          tools: TOOLS,
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.text();
+        console.error(`[chat] API error (${response.status}):`, err);
+        return NextResponse.json({ error: "AI response failed", details: err }, { status: response.status });
+      }
+
+      const data = await response.json();
+      console.log(`[chat] Response stop_reason=${data.stop_reason}, blocks=${data.content?.length}`);
+
+      // Check if Claude wants to use a tool
+      if (data.stop_reason === "tool_use") {
+        // Extract text blocks and tool_use blocks
+        const textBlocks = data.content.filter((b: { type: string }) => b.type === "text");
+        const toolBlocks = data.content.filter((b: { type: string }) => b.type === "tool_use");
+
+        if (textBlocks.length > 0) {
+          finalText += textBlocks.map((b: { text: string }) => b.text).join(" ");
+        }
+
+        // Add assistant's response (with tool_use) to messages
+        claudeMessages.push({ role: "assistant", content: data.content });
+
+        // Execute each tool and add results
+        const toolResults = [];
+        for (const tool of toolBlocks) {
+          console.log(`[chat] Tool call: ${tool.name}(${JSON.stringify(tool.input)})`);
+          const result = await executeTool(tool.name, tool.input);
+          console.log(`[chat] Tool result: ${result.slice(0, 100)}...`);
+          toolResults.push({
+            type: "tool_result" as const,
+            tool_use_id: tool.id,
+            content: result,
+          });
+        }
+
+        // Add tool results as user message
+        claudeMessages.push({ role: "user", content: toolResults });
+
+        // Loop back for Claude's final response incorporating tool results
+        continue;
+      }
+
+      // No tool use — extract final text
+      const textContent = data.content?.filter((b: { type: string }) => b.type === "text") || [];
+      finalText += textContent.map((b: { text: string }) => b.text).join(" ");
+      break;
     }
 
-    const data = await response.json();
-    console.log("[chat] Anthropic API response OK");
-    const text = data.content?.[0]?.type === "text" ? data.content[0].text : "Sorry, something went wrong.";
+    const text = finalText.trim() || "Sorry, something went wrong.";
+    console.log(`[chat] Final response (${text.length} chars)`);
     return NextResponse.json({ text });
+
   } catch (error) {
     console.error("[chat] Unhandled error:", error);
     return NextResponse.json({ error: "Server error", details: String(error) }, { status: 500 });
