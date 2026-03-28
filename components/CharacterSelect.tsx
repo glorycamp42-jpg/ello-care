@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { getSavedLang } from "@/lib/i18n";
 
 /* ── Character persona definitions ── */
 export interface Persona {
@@ -74,6 +75,7 @@ interface CharacterSelectProps {
 
 export default function CharacterSelect({ onSelect, initialId }: CharacterSelectProps) {
   const [selected, setSelected] = useState<string>(initialId || "granddaughter");
+  const lang = getSavedLang();
 
   const selectedPersona = PERSONAS.find((p) => p.id === selected)!;
 
@@ -90,10 +92,10 @@ export default function CharacterSelect({ onSelect, initialId }: CharacterSelect
       {/* Title */}
       <div className="text-center px-6 pt-5 pb-6">
         <h1 className="text-[22px] font-bold text-warm-brown leading-snug">
-          소연이와 어떻게 대화할까요?
+          {lang.ui.charSelectTitle}
         </h1>
         <p className="text-sm text-warm-gray-light mt-2">
-          편한 방식으로 골라주세요
+          {lang.ui.charSelectSubtitle}
         </p>
       </div>
 
@@ -156,7 +158,7 @@ export default function CharacterSelect({ onSelect, initialId }: CharacterSelect
                      shadow-md shadow-coral/25 hover:bg-coral-dark active:scale-[0.98]
                      transition-all"
         >
-          시작하기
+          {lang.ui.start}
         </button>
       </div>
     </div>

@@ -94,10 +94,12 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (persona && !showSelect && messages.length === 0) {
-      const greeting: Message = { role: "assistant", content: persona.greeting };
+    if (persona && !showSelect && !showLangSelect && messages.length === 0) {
+      const currentLang = lang || getSavedLang();
+      const greetingText = currentLang.greeting;
+      const greeting: Message = { role: "assistant", content: greetingText };
       setMessages([greeting]);
-      setLastAssistantText(persona.greeting);
+      setLastAssistantText(greetingText);
 
       // Check for today/tomorrow reminders
       checkMorningReminders();
