@@ -61,6 +61,7 @@ export default function Home() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
 
@@ -108,27 +109,43 @@ export default function Home() {
     return r;
   }
 
-  function playTTS(text: string) {
-    if (typeof window === "undefined" || !window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-    const clean = text
-      .replace(/[\u{1F000}-\u{1FFFF}|\u{2600}-\u{27FF}|\u{2300}-\u{23FF}|\u{FE00}-\u{FEFF}|\u{1F900}-\u{1F9FF}]/gu, "")
-      .replace(/\s{2,}/g, " ").trim();
-    if (!clean) return;
-    const u = new SpeechSynthesisUtterance(clean);
-    u.lang = "ko-KR"; u.rate = 0.9; u.pitch = 1.1;
-    const voices = window.speechSynthesis.getVoices();
-    const ko = voices.find((v) => v.lang.startsWith("ko"));
-    if (ko) u.voice = ko;
-    u.onstart = () => setIsSpeaking(true);
-    u.onend = () => setIsSpeaking(false);
-    u.onerror = () => setIsSpeaking(false);
-    window.speechSynthesis.speak(u);
+  async function playTTS(text: string) {
+    if (!persona) return;
+    try {
+      // Stop any current audio
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, voiceId: persona.voiceId }),
+      });
+
+      if (!res.ok) return;
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audioRef.current = audio;
+
+      audio.onplay = () => setIsSpeaking(true);
+      audio.onended = () => { setIsSpeaking(false); URL.revokeObjectURL(url); audioRef.current = null; };
+      audio.onerror = () => { setIsSpeaking(false); URL.revokeObjectURL(url); audioRef.current = null; };
+
+      await audio.play();
+    } catch {
+      setIsSpeaking(false);
+    }
   }
 
   function stopOrReplayTTS() {
-    if (isSpeaking) { window.speechSynthesis.cancel(); setIsSpeaking(false); }
-    else if (lastAssistantText) playTTS(lastAssistantText);
+    if (isSpeaking && audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+      setIsSpeaking(false);
+    } else if (lastAssistantText) {
+      playTTS(lastAssistantText);
+    }
   }
 
   /* ── Chat JSX (inline to keep state access simple) ── */

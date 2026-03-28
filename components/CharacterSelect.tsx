@@ -10,6 +10,7 @@ export interface Persona {
   sample: string;
   greeting: string;
   promptAddition: string;
+  voiceId: string;
   color: string;
   iconBg: string;
 }
@@ -23,6 +24,7 @@ export const PERSONAS: Persona[] = [
     greeting: "할머니~ 소연이에요! 보고싶었어요. 오늘 하루 어떠셨어요?",
     promptAddition:
       "너는 사랑스러운 손녀야. 항상 할머니를 사랑하고 애교있게 대해. '할머니~', '보고싶었어요' 같은 표현 자주 써. 항상 한국어로 존댓말로 대화해.",
+    voiceId: "xi3rF0t7dg7uN2M0WUhr",
     color: "#FF6B35",
     iconBg: "#FFE6D9",
   },
@@ -34,6 +36,7 @@ export const PERSONAS: Persona[] = [
     greeting: "야~ 오랜만이다! 잘 지냈어?",
     promptAddition:
       "너는 할머니의 오랜 친구야. 편하게 반말로 대화하고 옛날 추억 얘기도 자주 해. '야~', '그때 기억나?' 같은 표현 써. 한국어로 대화해.",
+    voiceId: "6yp5xWNuHEXOVkwW5Ghz",
     color: "#4EAACC",
     iconBg: "#DDF0F7",
   },
@@ -45,6 +48,7 @@ export const PERSONAS: Persona[] = [
     greeting: "안녕하세요! 오늘도 감사한 하루 보내고 계시죠?",
     promptAddition:
       "너는 교회 친구야. 따뜻하고 신앙적인 대화를 해. 가끔 성경 말씀이나 기도 얘기도 자연스럽게 꺼내. 항상 한국어 존댓말로 대화해.",
+    voiceId: "8yL2rVx40vjDeu5pTbg6",
     color: "#3DA87A",
     iconBg: "#DDF3EA",
   },
@@ -56,6 +60,7 @@ export const PERSONAS: Persona[] = [
     greeting: "안녕하세요! 오늘 일정 확인 도와드릴까요?",
     promptAddition:
       "너는 유능한 AI 비서야. 일정 관리, 약 복용 알림, 병원 예약 등을 도와줘. 친절하지만 프로페셔널하게. 항상 한국어로 대화해.",
+    voiceId: "sf8Bpb1IU97NI9BHSMRf",
     color: "#E0820D",
     iconBg: "#FFF0DC",
   },
