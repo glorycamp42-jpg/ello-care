@@ -165,25 +165,39 @@ async function executeAlertFamily(message: string, urgency: string): Promise<str
   });
 }
 
+// Hardcoded trusted places in LA Koreatown + Google Maps search link
+const KNOWN_PLACES: Record<string, { name: string; address: string; phone: string }[]> = {
+  hospital: [
+    { name: "한미 메디컬 클리닉", address: "3727 W 6th St, Los Angeles", phone: "(213) 386-5500" },
+    { name: "갈보리 의원", address: "3255 Wilshire Blvd, Los Angeles", phone: "(213) 382-5700" },
+    { name: "고려 메디칼", address: "4161 Wilshire Blvd, Los Angeles", phone: "(213) 383-0080" },
+  ],
+  pharmacy: [
+    { name: "한인 약국", address: "3500 W 6th St, Los Angeles", phone: "(213) 385-0300" },
+  ],
+};
+
+function matchCategory(query: string): string | null {
+  const q = query.toLowerCase();
+  if (/병원|hospital|clinic|의원|doctor|의사/.test(q)) return "hospital";
+  if (/약국|pharmacy|drugstore/.test(q)) return "pharmacy";
+  return null;
+}
+
 async function executeFindNearby(query: string, city: string = "Los Angeles"): Promise<string> {
-  try {
-    const searchQuery = `${query} ${city}`;
-    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchQuery)}&format=json&limit=3&addressdetails=1`;
-    const res = await fetch(url, {
-      headers: { "User-Agent": "ElloCare/1.0 (care-app)" },
-    });
-    if (!res.ok) return "Location search unavailable.";
-    const results = await res.json();
-    const places = results.map((r: { display_name: string; lat: string; lon: string }) => ({
-      name: r.display_name.split(",").slice(0, 3).join(","),
-      lat: r.lat,
-      lon: r.lon,
-    }));
-    return JSON.stringify({ query, city, places });
-  } catch (err) {
-    console.error("[tool:nearby]", err);
-    return "Location search unavailable.";
-  }
+  const category = matchCategory(query);
+  const places = category ? (KNOWN_PLACES[category] || []) : [];
+
+  const mapsQuery = encodeURIComponent(`Korean ${query} near me`);
+  const mapsLink = `https://maps.google.com/?q=${mapsQuery}`;
+
+  return JSON.stringify({
+    query,
+    city,
+    places,
+    mapsLink,
+    mapsText: `Find more: ${mapsLink}`,
+  });
 }
 
 async function executeTool(name: string, input: Record<string, string>): Promise<string> {
