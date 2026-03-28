@@ -68,12 +68,13 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const messages: IncomingMessage[] = body.messages;
     const personaId: string = body.persona || "granddaughter";
-    const langPrompt: string = body.langPrompt || "항상 한국어로 대화해.";
+    const langPrompt: string = body.langPrompt || "너는 반드시 한국어로만 대화해야 해. 다른 언어는 절대 사용하지 마.";
+    const charName: string = body.charName || "소연";
 
     const personaPrompt = PERSONA_PROMPTS[personaId] || PERSONA_PROMPTS.granddaughter;
-    const systemPrompt = `${BASE_PROMPT}\n\n언어 규칙: ${langPrompt}\n\n${personaPrompt}`;
+    const systemPrompt = `너의 이름은 ${charName}이야.\n\n${BASE_PROMPT}\n\n중요 - 언어 규칙 (최우선): ${langPrompt}\n\n${personaPrompt}`;
 
-    console.log(`[chat] persona=${personaId}, lang="${langPrompt.slice(0, 20)}...", ${messages.length} messages`);
+    console.log(`[chat] persona=${personaId}, name=${charName}, ${messages.length} messages`);
 
     const apiMessages = messages.map((m, i) => {
       if (m.image) {

@@ -4,7 +4,8 @@ export interface Language {
   code: LangCode;
   name: string;
   flag: string;
-  speechLang: string; // BCP-47 for Web Speech API
+  speechLang: string;
+  charName: string;
   systemPrompt: string;
   ui: {
     placeholder: string;
@@ -22,6 +23,9 @@ export interface Language {
     home: string;
     chat: string;
     safety: string;
+    camera: string;
+    mic: string;
+    speaker: string;
   };
 }
 
@@ -31,7 +35,8 @@ export const LANGUAGES: Language[] = [
     name: "한국어",
     flag: "🇰🇷",
     speechLang: "ko-KR",
-    systemPrompt: "항상 한국어로 대화해.",
+    charName: "소연",
+    systemPrompt: "너는 반드시 한국어로만 대화해야 해. 다른 언어는 절대 사용하지 마.",
     ui: {
       placeholder: "소연이에게 말씀해주세요...",
       quickButtons: ["오늘 기분은 어떠세요?", "점심은 드셨어요?", "몸은 괜찮으세요?"],
@@ -48,6 +53,9 @@ export const LANGUAGES: Language[] = [
       home: "홈",
       chat: "대화",
       safety: "안전",
+      camera: "카메라",
+      mic: "말하기",
+      speaker: "듣기",
     },
   },
   {
@@ -55,23 +63,27 @@ export const LANGUAGES: Language[] = [
     name: "English",
     flag: "🇺🇸",
     speechLang: "en-US",
-    systemPrompt: "Always respond in English. Be warm and friendly like a caring granddaughter.",
+    charName: "Sophie",
+    systemPrompt: "You MUST respond ONLY in English. Never use Korean or any other language. Always speak English. Be warm and friendly like a caring granddaughter.",
     ui: {
-      placeholder: "Talk to Soyeon...",
-      quickButtons: ["How are you feeling?", "Did you eat lunch?", "Are you doing okay?"],
+      placeholder: "Talk to Sophie...",
+      quickButtons: ["How are you feeling today?", "Did you eat lunch?", "Are you doing okay?"],
       wordGame: "🎮 Word Game",
       bible: "📖 Bible",
       schedule: "📅 Schedule",
       speaking: "Speaking...",
       thinking: "Thinking...",
       listening: "Listening... please speak",
-      aiCompanion: "AI Companion",
+      aiCompanion: "AI Granddaughter",
       start: "Start",
       back: "Back",
       send: "Send",
       home: "Home",
       chat: "Chat",
       safety: "Safety",
+      camera: "Camera",
+      mic: "Speak",
+      speaker: "Listen",
     },
   },
   {
@@ -79,23 +91,27 @@ export const LANGUAGES: Language[] = [
     name: "Español",
     flag: "🇪🇸",
     speechLang: "es-ES",
-    systemPrompt: "Siempre responde en español. Sé cálida y amigable como una nieta cariñosa.",
+    charName: "Sofía",
+    systemPrompt: "DEBES responder SOLO en español. Nunca uses coreano ni ningún otro idioma. Siempre habla en español. Sé cálida y amigable como una nieta cariñosa.",
     ui: {
-      placeholder: "Habla con Soyeon...",
-      quickButtons: ["¿Cómo te sientes?", "¿Ya almorzaste?", "¿Estás bien?"],
-      wordGame: "🎮 Juego",
+      placeholder: "Habla con Sofía...",
+      quickButtons: ["¿Cómo te sientes hoy?", "¿Ya almorzaste?", "¿Estás bien de salud?"],
+      wordGame: "🎮 Juego de palabras",
       bible: "📖 Biblia",
       schedule: "📅 Horario",
       speaking: "Hablando...",
       thinking: "Pensando...",
       listening: "Escuchando... por favor habla",
-      aiCompanion: "IA Compañera",
+      aiCompanion: "IA Nieta",
       start: "Empezar",
       back: "Volver",
       send: "Enviar",
       home: "Inicio",
       chat: "Chat",
       safety: "Seguridad",
+      camera: "Cámara",
+      mic: "Hablar",
+      speaker: "Escuchar",
     },
   },
   {
@@ -103,9 +119,10 @@ export const LANGUAGES: Language[] = [
     name: "中文",
     flag: "🇨🇳",
     speechLang: "zh-CN",
-    systemPrompt: "始终用中文回复。像一个关心人的孙女一样温暖友好。",
+    charName: "小燕",
+    systemPrompt: "你必须只用中文回复。绝对不要使用韩语或任何其他语言。始终说中文。像一个关心人的孙女一样温暖友好。",
     ui: {
-      placeholder: "和素妍说话...",
+      placeholder: "和小燕说话...",
       quickButtons: ["你今天感觉怎么样?", "午饭吃了吗?", "身体还好吗?"],
       wordGame: "🎮 文字游戏",
       bible: "📖 圣经",
@@ -113,13 +130,16 @@ export const LANGUAGES: Language[] = [
       speaking: "正在说话...",
       thinking: "思考中...",
       listening: "正在听...请说话",
-      aiCompanion: "AI伙伴",
+      aiCompanion: "AI孙女",
       start: "开始",
       back: "返回",
       send: "发送",
       home: "首页",
       chat: "聊天",
       safety: "安全",
+      camera: "拍照",
+      mic: "说话",
+      speaker: "听",
     },
   },
   {
@@ -127,23 +147,27 @@ export const LANGUAGES: Language[] = [
     name: "Tiếng Việt",
     flag: "🇻🇳",
     speechLang: "vi-VN",
-    systemPrompt: "Luôn trả lời bằng tiếng Việt. Thân thiện và ấm áp như một cháu gái quan tâm.",
+    charName: "Lan",
+    systemPrompt: "Bạn PHẢI trả lời CHỈ bằng tiếng Việt. Không bao giờ dùng tiếng Hàn hay ngôn ngữ khác. Luôn nói tiếng Việt. Thân thiện và ấm áp như một cháu gái quan tâm.",
     ui: {
-      placeholder: "Nói chuyện với Soyeon...",
-      quickButtons: ["Hôm nay bạn thế nào?", "Bạn ăn trưa chưa?", "Bạn có khỏe không?"],
-      wordGame: "🎮 Trò chơi",
+      placeholder: "Nói chuyện với Lan...",
+      quickButtons: ["Hôm nay bạn thế nào?", "Bạn ăn trưa chưa?", "Sức khỏe có ổn không?"],
+      wordGame: "🎮 Trò chơi chữ",
       bible: "📖 Kinh Thánh",
       schedule: "📅 Lịch trình",
       speaking: "Đang nói...",
       thinking: "Đang suy nghĩ...",
       listening: "Đang nghe... hãy nói",
-      aiCompanion: "Bạn AI",
+      aiCompanion: "Cháu gái AI",
       start: "Bắt đầu",
       back: "Quay lại",
       send: "Gửi",
       home: "Trang chủ",
       chat: "Trò chuyện",
       safety: "An toàn",
+      camera: "Máy ảnh",
+      mic: "Nói",
+      speaker: "Nghe",
     },
   },
   {
@@ -151,23 +175,27 @@ export const LANGUAGES: Language[] = [
     name: "日本語",
     flag: "🇯🇵",
     speechLang: "ja-JP",
-    systemPrompt: "常に日本語で返答してください。温かく親切な孫娘のように接してください。",
+    charName: "さくら",
+    systemPrompt: "必ず日本語のみで返答してください。韓国語や他の言語は絶対に使わないでください。常に日本語で話してください。温かく親切な孫娘のように接してください。",
     ui: {
-      placeholder: "ソヨンに話しかけて...",
-      quickButtons: ["今日の気分はどう?", "お昼ご飯食べた?", "体調は大丈夫?"],
+      placeholder: "さくらに話しかけて...",
+      quickButtons: ["今日の気分はどうですか?", "お昼ご飯は食べましたか?", "体調は大丈夫ですか?"],
       wordGame: "🎮 しりとり",
       bible: "📖 聖書",
       schedule: "📅 予定",
       speaking: "話しています...",
       thinking: "考えています...",
       listening: "聞いています...話してください",
-      aiCompanion: "AI仲間",
+      aiCompanion: "AI孫娘",
       start: "スタート",
       back: "戻る",
       send: "送信",
       home: "ホーム",
       chat: "チャット",
       safety: "安全",
+      camera: "カメラ",
+      mic: "話す",
+      speaker: "聞く",
     },
   },
 ];
@@ -182,7 +210,7 @@ export function getSavedLang(): Language {
     const code = localStorage.getItem("ello-language");
     if (code) return getLang(code);
   } catch {}
-  return LANGUAGES[0]; // default Korean
+  return LANGUAGES[0];
 }
 
 export function saveLang(code: LangCode) {

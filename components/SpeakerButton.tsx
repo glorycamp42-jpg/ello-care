@@ -3,11 +3,15 @@
 interface SpeakerButtonProps {
   isSpeaking: boolean;
   onClick: () => void;
+  label?: string;
+  labelActive?: string;
 }
 
 export default function SpeakerButton({
   isSpeaking,
   onClick,
+  label = "듣기",
+  labelActive = "듣는 중",
 }: SpeakerButtonProps) {
   return (
     <button
@@ -42,7 +46,7 @@ export default function SpeakerButton({
         </svg>
       </div>
       <span className="text-[11px] font-medium text-warm-gray">
-        {isSpeaking ? "듣는 중" : "듣기"}
+        {isSpeaking ? labelActive : label}
       </span>
     </button>
   );

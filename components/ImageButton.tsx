@@ -3,11 +3,13 @@
 interface ImageButtonProps {
   onClick: () => void;
   disabled?: boolean;
+  label?: string;
 }
 
 export default function ImageButton({
   onClick,
   disabled = false,
+  label = "카메라",
 }: ImageButtonProps) {
   return (
     <button
@@ -31,7 +33,7 @@ export default function ImageButton({
           <circle cx="12" cy="13" r="4" />
         </svg>
       </div>
-      <span className="text-[11px] font-medium text-warm-gray">카메라</span>
+      <span className="text-[11px] font-medium text-warm-gray">{label}</span>
     </button>
   );
 }

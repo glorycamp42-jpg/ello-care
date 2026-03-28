@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { text: rawText, voiceId } = await req.json();
+    const { text: rawText, voiceId, languageCode } = await req.json();
 
     if (!voiceId) {
       return NextResponse.json({ error: "voiceId가 필요합니다." }, { status: 400 });
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "텍스트가 비어있습니다." }, { status: 400 });
     }
 
-    console.log(`[tts] voiceId=${voiceId}, text length=${text.length}`);
+    console.log(`[tts] voiceId=${voiceId}, lang=${languageCode || "auto"}, text length=${text.length}`);
 
     const response = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,

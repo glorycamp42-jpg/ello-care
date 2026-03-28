@@ -232,7 +232,7 @@ export default function Home() {
       const res = await fetch("/api/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, voiceId: persona.voiceId }),
+        body: JSON.stringify({ text, voiceId: persona.voiceId, languageCode: lang?.speechLang }),
         signal: controller.signal,
       });
 
@@ -372,7 +372,7 @@ function ChatUI({
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: newMsgs, persona: persona.id, langPrompt: lang.systemPrompt }),
+          body: JSON.stringify({ messages: newMsgs, persona: persona.id, langPrompt: lang.systemPrompt, charName: lang.charName }),
         });
         const data = await res.json();
         const rawReply = data.error ? "죄송해요, 잠시 문제가 있었어요. 다시 말씀해주세요." : data.text;
@@ -530,8 +530,8 @@ function ChatUI({
             size={160}
             speaking={isSpeaking}
             showLabel
-            label="소연이"
-            badge={persona.name}
+            label={lang.charName}
+            badge={lang.ui.aiCompanion}
           />
         </div>
       )}
@@ -613,9 +613,9 @@ function ChatUI({
         </div>
         <div className="flex items-center justify-center gap-6">
           <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleImageUpload} className="hidden" />
-          <ImageButton onClick={() => fileInputRef.current?.click()} disabled={isLoading} />
-          <VoiceButton isListening={isListening} onClick={toggleListening} disabled={isLoading} />
-          <SpeakerButton isSpeaking={isSpeaking} onClick={stopOrReplayTTS} />
+          <ImageButton onClick={() => fileInputRef.current?.click()} disabled={isLoading} label={lang.ui.camera} />
+          <VoiceButton isListening={isListening} onClick={toggleListening} disabled={isLoading} label={lang.ui.mic} />
+          <SpeakerButton isSpeaking={isSpeaking} onClick={stopOrReplayTTS} label={lang.ui.speaker} labelActive={lang.ui.speaking} />
         </div>
         {isListening && <p className="text-center text-sm text-coral mt-2 animate-pulse font-medium">{lang.ui.listening}</p>}
       </div>

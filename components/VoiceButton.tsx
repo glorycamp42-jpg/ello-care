@@ -4,12 +4,14 @@ interface VoiceButtonProps {
   isListening: boolean;
   onClick: () => void;
   disabled?: boolean;
+  label?: string;
 }
 
 export default function VoiceButton({
   isListening,
   onClick,
   disabled = false,
+  label = "말하기",
 }: VoiceButtonProps) {
   return (
     <button
@@ -45,7 +47,7 @@ export default function VoiceButton({
           <line x1="8" y1="21" x2="16" y2="21" />
         </svg>
       </div>
-      <span className="text-[11px] font-medium text-warm-gray">말하기</span>
+      <span className="text-[11px] font-medium text-warm-gray">{label}</span>
     </button>
   );
 }
