@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import SoyeonAvatar from "@/components/SoyeonAvatar";
+import CharacterAvatar from "@/components/CharacterAvatar";
 import VoiceButton from "@/components/VoiceButton";
 import ImageButton from "@/components/ImageButton";
 import SpeakerButton from "@/components/SpeakerButton";
@@ -390,40 +390,48 @@ function ChatUI({
         </div>
       </header>
 
-      {/* ── Chat area ── */}
-      <div className="flex-1 overflow-y-auto chat-scroll px-4 py-3 space-y-3">
-        {messages.length <= 1 && (
-          <div className="flex flex-col items-center pt-4 pb-2">
-            <SoyeonAvatar size={140} speaking={isSpeaking} showLabel />
-          </div>
-        )}
+      {/* ── Avatar section (40% height when few messages) ── */}
+      {messages.length <= 1 && (
+        <div className="flex flex-col items-center justify-center" style={{ minHeight: "40vh" }}>
+          <CharacterAvatar
+            personaId={persona.id}
+            size={160}
+            speaking={isSpeaking}
+            showLabel
+            label="소연이"
+            badge={persona.name}
+          />
+        </div>
+      )}
 
+      {/* ── Chat area ── */}
+      <div className="flex-1 overflow-y-auto chat-scroll px-4 py-2 space-y-2">
         {messages.map((msg, i) => (
-          <div key={i} className={`flex items-end gap-2 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+          <div key={i} className={`flex items-end gap-1.5 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
             {msg.role === "assistant" && (
-              <div className="shrink-0 mb-1">
-                <SoyeonAvatar size={40} speaking={isSpeaking && i === messages.length - 1} />
+              <div className="shrink-0 mb-0.5">
+                <CharacterAvatar personaId={persona.id} size={32} speaking={isSpeaking && i === messages.length - 1} />
               </div>
             )}
-            <div className={`max-w-[78%] px-4 py-3 text-[15px] leading-relaxed ${
+            <div className={`max-w-[80%] px-3.5 py-2.5 text-[14px] leading-relaxed ${
               msg.role === "user"
-                ? "bg-coral text-white rounded-[20px] rounded-br-[6px] shadow-sm shadow-coral/15"
-                : "bg-warm-white text-warm-gray rounded-[20px] rounded-bl-[6px] shadow-sm shadow-warm-gray/8"
+                ? "bg-coral text-white rounded-[18px] rounded-br-[5px] shadow-sm shadow-coral/15"
+                : "bg-warm-white text-warm-gray rounded-[18px] rounded-bl-[5px] shadow-sm shadow-warm-gray/8"
             }`}>
-              {msg.image && <img src={msg.image.dataUrl} alt="사진" className="rounded-2xl mb-2 max-h-44 w-auto" />}
+              {msg.image && <img src={msg.image.dataUrl} alt="사진" className="rounded-xl mb-1.5 max-h-36 w-auto" />}
               {msg.content}
             </div>
           </div>
         ))}
 
         {isLoading && (
-          <div className="flex items-end gap-2 justify-start">
-            <div className="shrink-0 mb-1"><SoyeonAvatar size={40} /></div>
-            <div className="bg-warm-white px-5 py-3.5 rounded-[20px] rounded-bl-[6px] shadow-sm shadow-warm-gray/8">
+          <div className="flex items-end gap-1.5 justify-start">
+            <div className="shrink-0 mb-0.5"><CharacterAvatar personaId={persona.id} size={32} /></div>
+            <div className="bg-warm-white px-4 py-3 rounded-[18px] rounded-bl-[5px] shadow-sm shadow-warm-gray/8">
               <span className="inline-flex gap-1.5">
-                <span className="w-2 h-2 bg-coral/40 rounded-full animate-bounce" />
-                <span className="w-2 h-2 bg-coral/40 rounded-full animate-bounce" style={{ animationDelay: "0.15s" }} />
-                <span className="w-2 h-2 bg-coral/40 rounded-full animate-bounce" style={{ animationDelay: "0.3s" }} />
+                <span className="w-1.5 h-1.5 bg-coral/40 rounded-full animate-bounce" />
+                <span className="w-1.5 h-1.5 bg-coral/40 rounded-full animate-bounce" style={{ animationDelay: "0.15s" }} />
+                <span className="w-1.5 h-1.5 bg-coral/40 rounded-full animate-bounce" style={{ animationDelay: "0.3s" }} />
               </span>
             </div>
           </div>

@@ -1,0 +1,12 @@
+{
+  "name": "Ello Care",
+  "short_name": "Ello",
+  "description": "AI 손녀 소연이와 함께하는 케어 앱",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FFF8EE",
+  "theme_color": "#FF6B35",
+  "icons": [
+    {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}
+  ]
+}
