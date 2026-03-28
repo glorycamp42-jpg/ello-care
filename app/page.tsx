@@ -9,6 +9,8 @@ import CharacterSelect, { PERSONAS, Persona } from "@/components/CharacterSelect
 import { useTickets } from "@/components/useTickets";
 import TicketToast from "@/components/TicketToast";
 import TicketPage from "@/components/TicketPage";
+import RemindersPage from "@/components/RemindersPage";
+import { parseMemories } from "@/lib/parseMemory";
 
 /* ── Web Speech API types ── */
 declare global {
@@ -50,6 +52,7 @@ export default function Home() {
   const [persona, setPersona] = useState<Persona | null>(null);
   const [showSelect, setShowSelect] = useState(true);
   const [showTicketPage, setShowTicketPage] = useState(false);
+  const [showReminders, setShowReminders] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -78,8 +81,44 @@ export default function Home() {
       const greeting: Message = { role: "assistant", content: persona.greeting };
       setMessages([greeting]);
       setLastAssistantText(persona.greeting);
+
+      // Check for today/tomorrow reminders
+      checkMorningReminders();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [persona, showSelect, messages.length]);
+
+  async function checkMorningReminders() {
+    try {
+      const res = await fetch("/api/memories");
+      const data = await res.json();
+      const memories = data.memories || [];
+      if (memories.length === 0) return;
+
+      const today = new Date();
+      const todayStr = `${today.getMonth() + 1}월${today.getDate()}일`;
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowStr = `${tomorrow.getMonth() + 1}월${tomorrow.getDate()}일`;
+
+      const urgent = memories.filter((m: { date: string }) =>
+        m.date.includes(todayStr) || m.date.includes("오늘") ||
+        m.date.includes(tomorrowStr) || m.date.includes("내일")
+      );
+
+      if (urgent.length > 0) {
+        const m = urgent[0];
+        const when = m.date.includes("오늘") || m.date.includes(todayStr) ? "오늘" : "내일";
+        const reminder = `할머니, ${when} ${m.time ? m.time + "에 " : ""}${m.content} 있어요!`;
+        setTimeout(() => {
+          setMessages((prev) => [...prev, { role: "assistant", content: reminder }]);
+          setLastAssistantText(reminder);
+        }, 2000);
+      }
+    } catch {
+      // Silently fail if Supabase not configured
+    }
+  }
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -99,6 +138,9 @@ export default function Home() {
   }
   if (showTicketPage) {
     return <TicketPage state={tickets.state} onClose={() => setShowTicketPage(false)} />;
+  }
+  if (showReminders) {
+    return <RemindersPage onClose={() => setShowReminders(false)} />;
   }
 
   /* ── Helpers ── */
@@ -189,6 +231,7 @@ export default function Home() {
     playTTS={playTTS} stopOrReplayTTS={stopOrReplayTTS} createRecognition={createRecognition}
     onChangeCharacter={handleChangeCharacter}
     tickets={tickets} onShowTickets={() => setShowTicketPage(true)}
+    onShowReminders={() => setShowReminders(true)}
     checkedIn={checkedIn} setCheckedIn={setCheckedIn}
   />;
 }
@@ -211,6 +254,7 @@ interface ChatUIProps {
   onChangeCharacter: () => void;
   tickets: ReturnType<typeof useTickets>;
   onShowTickets: () => void;
+  onShowReminders: () => void;
   checkedIn: boolean; setCheckedIn: (b: boolean) => void;
 }
 
@@ -221,24 +265,35 @@ function ChatUI({
   lastAssistantText, setLastAssistantText,
   chatEndRef, recognitionRef, fileInputRef, messagesRef,
   playTTS, stopOrReplayTTS, createRecognition, onChangeCharacter,
-  tickets, onShowTickets, checkedIn, setCheckedIn,
+  tickets, onShowTickets, onShowReminders, checkedIn, setCheckedIn,
 }: ChatUIProps) {
+
+  // Save parsed memories to Supabase
+  async function saveMemories(memories: { date: string; time: string; content: string }[]) {
+    for (const m of memories) {
+      try {
+        await fetch("/api/memories", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(m),
+        });
+      } catch (err) {
+        console.error("[memory] Save failed:", err);
+      }
+    }
+  }
 
   const sendMessage = useCallback(
     async (textOverride?: string) => {
       const text = textOverride || input.trim();
       if (!text || isLoading) return;
 
-      // Earn chat point
       tickets.earn("chat");
 
-      // Check-in detection
       if (!checkedIn && /기분|안녕|잘 지|어떠/.test(text)) {
         tickets.earn("checkin");
         setCheckedIn(true);
       }
-
-      // Singing detection
       if (/노래|부르|singing/.test(text)) {
         tickets.earn("sing");
       }
@@ -255,7 +310,12 @@ function ChatUI({
           body: JSON.stringify({ messages: newMsgs, persona: persona.id }),
         });
         const data = await res.json();
-        const reply = data.error ? "죄송해요, 잠시 문제가 있었어요. 다시 말씀해주세요." : data.text;
+        const rawReply = data.error ? "죄송해요, 잠시 문제가 있었어요. 다시 말씀해주세요." : data.text;
+
+        // Parse and save any [MEMORY:] tags
+        const { cleanText: reply, memories } = parseMemories(rawReply);
+        if (memories.length > 0) saveMemories(memories);
+
         setMessages([...newMsgs, { role: "assistant", content: reply }]);
         setLastAssistantText(reply);
         if (!data.error) playTTS(reply);
@@ -450,6 +510,10 @@ function ChatUI({
         <button onClick={startWordGame}
           className="px-3.5 py-2 bg-coral/10 text-coral rounded-full text-[13px] font-bold hover:bg-coral/20 active:bg-coral/25 transition-colors whitespace-nowrap shrink-0 border border-coral/20">
           &#x1F3AE; 끝말잇기
+        </button>
+        <button onClick={onShowReminders}
+          className="px-3.5 py-2 bg-coral/10 text-coral rounded-full text-[13px] font-bold hover:bg-coral/20 active:bg-coral/25 transition-colors whitespace-nowrap shrink-0 border border-coral/20">
+          &#x1F4C5; 일정
         </button>
       </div>
 
