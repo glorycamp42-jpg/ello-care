@@ -11,6 +11,8 @@ import TicketToast from "@/components/TicketToast";
 import TicketPage from "@/components/TicketPage";
 import RemindersPage from "@/components/RemindersPage";
 import BiblePage from "@/components/BiblePage";
+import SafetyPage from "@/components/SafetyPage";
+import { findContactByKeyword } from "@/components/SafetyPage";
 import { parseMemories } from "@/lib/parseMemory";
 
 /* ── Web Speech API types ── */
@@ -55,6 +57,7 @@ export default function Home() {
   const [showTicketPage, setShowTicketPage] = useState(false);
   const [showReminders, setShowReminders] = useState(false);
   const [showBible, setShowBible] = useState(false);
+  const [showSafety, setShowSafety] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -158,6 +161,9 @@ export default function Home() {
       }}
     />;
   }
+  if (showSafety) {
+    return <SafetyPage onClose={() => setShowSafety(false)} />;
+  }
 
   /* ── Helpers ── */
   function createRecognition(): SpeechRecognition | null {
@@ -249,6 +255,7 @@ export default function Home() {
     tickets={tickets} onShowTickets={() => setShowTicketPage(true)}
     onShowReminders={() => setShowReminders(true)}
     onShowBible={() => setShowBible(true)}
+    onShowSafety={() => setShowSafety(true)}
     checkedIn={checkedIn} setCheckedIn={setCheckedIn}
   />;
 }
@@ -273,6 +280,7 @@ interface ChatUIProps {
   onShowTickets: () => void;
   onShowReminders: () => void;
   onShowBible: () => void;
+  onShowSafety: () => void;
   checkedIn: boolean; setCheckedIn: (b: boolean) => void;
 }
 
@@ -283,7 +291,7 @@ function ChatUI({
   lastAssistantText, setLastAssistantText,
   chatEndRef, recognitionRef, fileInputRef, messagesRef,
   playTTS, stopOrReplayTTS, createRecognition, onChangeCharacter,
-  tickets, onShowTickets, onShowReminders, onShowBible, checkedIn, setCheckedIn,
+  tickets, onShowTickets, onShowReminders, onShowBible, onShowSafety, checkedIn, setCheckedIn,
 }: ChatUIProps) {
 
   // Save parsed memories to Supabase
@@ -314,6 +322,16 @@ function ChatUI({
       }
       if (/노래|부르|singing/.test(text)) {
         tickets.earn("sing");
+      }
+
+      // Call detection: "딸한테 전화해줘", "아들에게 전화", etc.
+      const callMatch = text.match(/(딸|아들|손자|손녀|며느리|사위|엄마|아빠|형|누나|동생).*(전화|연락|call)/);
+      if (callMatch) {
+        const contact = findContactByKeyword(callMatch[1]);
+        if (contact) {
+          window.location.href = `tel:${contact.phone}`;
+          return;
+        }
       }
 
       const userMsg: Message = { role: "user", content: text };
@@ -609,7 +627,7 @@ function ChatUI({
           </button>
 
           {/* 안전 */}
-          <button onClick={() => alert("긴급 연락 기능은 곧 추가될 예정입니다.")} className="flex flex-col items-center gap-0.5 min-w-[56px] py-1 text-warm-gray-light">
+          <button onClick={onShowSafety} className="flex flex-col items-center gap-0.5 min-w-[56px] py-1 text-warm-gray-light">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
               <line x1="12" y1="8" x2="12" y2="12" />
