@@ -78,6 +78,8 @@ export default function Home() {
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
 
+  const [userCity, setUserCity] = useState("Los Angeles");
+
   const tickets = useTickets();
 
   useEffect(() => {
@@ -91,7 +93,48 @@ export default function Home() {
     // Load saved persona
     const saved = getSavedPersona();
     if (saved) { setPersona(saved); setShowSelect(false); }
+
+    // Load saved location or request geolocation
+    try {
+      const savedLoc = localStorage.getItem("ello-user-location");
+      if (savedLoc) {
+        const loc = JSON.parse(savedLoc);
+        if (loc.city) setUserCity(loc.city);
+        console.log(`[geo] Loaded saved location: ${loc.city}`);
+      } else {
+        requestGeolocation();
+      }
+    } catch { requestGeolocation(); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function requestGeolocation() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude, longitude } = pos.coords;
+        console.log(`[geo] Got coordinates: ${latitude}, ${longitude}`);
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`,
+            { headers: { "User-Agent": "ElloCare/1.0" } }
+          );
+          if (res.ok) {
+            const data = await res.json();
+            const city = data.address?.city || data.address?.town || data.address?.county || "Los Angeles";
+            const loc = { lat: latitude, lon: longitude, city };
+            localStorage.setItem("ello-user-location", JSON.stringify(loc));
+            setUserCity(city);
+            console.log(`[geo] Resolved city: ${city}`);
+          }
+        } catch (err) {
+          console.error("[geo] Reverse geocoding failed:", err);
+        }
+      },
+      (err) => console.log(`[geo] Permission denied or error: ${err.message}`),
+      { enableHighAccuracy: false, timeout: 10000 }
+    );
+  }
 
   useEffect(() => {
     if (persona && !showSelect && !showLangSelect && messages.length === 0) {
@@ -284,6 +327,7 @@ export default function Home() {
     onShowBible={() => setShowBible(true)}
     onShowSafety={() => setShowSafety(true)}
     onChangeLang={handleChangeLanguage}
+    userCity={userCity}
     lang={lang || getSavedLang()}
     checkedIn={checkedIn} setCheckedIn={setCheckedIn}
   />;
@@ -311,6 +355,7 @@ interface ChatUIProps {
   onShowBible: () => void;
   onShowSafety: () => void;
   onChangeLang: () => void;
+  userCity: string;
   lang: Language;
   checkedIn: boolean; setCheckedIn: (b: boolean) => void;
 }
@@ -322,7 +367,7 @@ function ChatUI({
   lastAssistantText, setLastAssistantText,
   chatEndRef, recognitionRef, fileInputRef, messagesRef,
   playTTS, stopOrReplayTTS, createRecognition, onChangeCharacter,
-  tickets, onShowTickets, onShowReminders, onShowBible, onShowSafety, onChangeLang, lang, checkedIn, setCheckedIn,
+  tickets, onShowTickets, onShowReminders, onShowBible, onShowSafety, onChangeLang, userCity, lang, checkedIn, setCheckedIn,
 }: ChatUIProps) {
 
   // Save parsed memories to Supabase
@@ -374,7 +419,7 @@ function ChatUI({
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: newMsgs, persona: persona.id, langPrompt: lang.systemPrompt, charName: lang.charName }),
+          body: JSON.stringify({ messages: newMsgs, persona: persona.id, langPrompt: lang.systemPrompt, charName: lang.charName, userCity }),
         });
         console.log(`[chat-ui] Sent: lang=${lang.code}, charName=${lang.charName}, langPrompt="${lang.systemPrompt.slice(0, 50)}..."`);
         const data = await res.json();

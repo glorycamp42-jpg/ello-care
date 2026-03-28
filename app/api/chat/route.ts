@@ -94,7 +94,7 @@ const TOOLS = [
 
 async function executeGetWeather(city: string): Promise<string> {
   try {
-    const res = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1`, {
+    const res = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1&u`, {
       headers: { "User-Agent": "ElloCare/1.0" },
     });
     if (!res.ok) return `Could not fetch weather for ${city}.`;
@@ -103,12 +103,13 @@ async function executeGetWeather(city: string): Promise<string> {
     if (!current) return `No weather data available for ${city}.`;
     return JSON.stringify({
       city,
-      temp_C: current.temp_C,
-      temp_F: current.temp_F,
-      condition: current.weatherDesc?.[0]?.value || "Unknown",
-      humidity: current.humidity,
-      feelslike_C: current.FeelsLikeC,
+      temperature_F: current.temp_F,
       feelslike_F: current.FeelsLikeF,
+      condition: current.weatherDesc?.[0]?.value || "Unknown",
+      humidity_percent: current.humidity,
+      wind_mph: current.windspeedMiles,
+      wind_direction: current.winddir16Point,
+      unit: "Fahrenheit (°F)",
     });
   } catch (err) {
     console.error("[tool:weather]", err);
@@ -200,10 +201,10 @@ async function executeFindNearby(query: string, city: string = "Los Angeles"): P
   });
 }
 
-async function executeTool(name: string, input: Record<string, string>): Promise<string> {
+async function executeTool(name: string, input: Record<string, string>, defaultCity: string): Promise<string> {
   switch (name) {
     case "get_weather":
-      return executeGetWeather(input.city || "Los Angeles");
+      return executeGetWeather(input.city || defaultCity);
     case "search_news":
       return executeSearchNews(input.query || "news", input.language);
     case "set_reminder":
@@ -211,7 +212,7 @@ async function executeTool(name: string, input: Record<string, string>): Promise
     case "alert_family":
       return executeAlertFamily(input.message, input.urgency || "medium");
     case "find_nearby":
-      return executeFindNearby(input.query, input.city || "Los Angeles");
+      return executeFindNearby(input.query, input.city || defaultCity);
     default:
       return JSON.stringify({ error: `Unknown tool: ${name}` });
   }
@@ -249,6 +250,7 @@ export async function POST(req: NextRequest) {
     const personaId: string = body.persona || "granddaughter";
     const langPrompt: string = body.langPrompt || "You MUST respond ONLY in Korean.";
     const charName: string = body.charName || "소연";
+    const userCity: string = body.userCity || "Los Angeles";
 
     const personaPrompt = PERSONA_PROMPTS[personaId] || PERSONA_PROMPTS.granddaughter;
 
@@ -259,6 +261,8 @@ Your name is ${charName}. You must ALWAYS respond in the language specified abov
 ${BASE_RULES}
 
 Your personality: ${personaPrompt}
+
+The user is located in: ${userCity}. When they ask about weather or nearby places without specifying a location, use "${userCity}" as the default city. Always use Fahrenheit (°F) for temperature.
 
 When using tools, always present the results naturally in your designated language. Don't show raw data — summarize it warmly.`;
 
@@ -331,7 +335,7 @@ When using tools, always present the results naturally in your designated langua
         const toolResults = [];
         for (const tool of toolBlocks) {
           console.log(`[chat] Tool call: ${tool.name}(${JSON.stringify(tool.input)})`);
-          const result = await executeTool(tool.name, tool.input);
+          const result = await executeTool(tool.name, tool.input, userCity);
           console.log(`[chat] Tool result: ${result.slice(0, 100)}...`);
           toolResults.push({
             type: "tool_result" as const,
