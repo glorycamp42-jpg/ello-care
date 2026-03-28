@@ -1,101 +1,429 @@
-import Image from "next/image";
+"use client";
+
+import { useState, useRef, useEffect, useCallback } from "react";
+import SoyeonAvatar from "@/components/SoyeonAvatar";
+import VoiceButton from "@/components/VoiceButton";
+import ImageButton from "@/components/ImageButton";
+import SpeakerButton from "@/components/SpeakerButton";
+import CharacterSelect, { PERSONAS, Persona } from "@/components/CharacterSelect";
+import { useTickets } from "@/components/useTickets";
+import TicketToast from "@/components/TicketToast";
+import TicketPage from "@/components/TicketPage";
+
+/* ── Web Speech API types ── */
+declare global {
+  interface Window {
+    SpeechRecognition: new () => SpeechRecognition;
+    webkitSpeechRecognition: new () => SpeechRecognition;
+  }
+}
+interface SpeechRecognition extends EventTarget {
+  lang: string; continuous: boolean; interimResults: boolean;
+  onresult: ((e: SpeechRecognitionResultEvent) => void) | null;
+  onerror: ((e: Event) => void) | null;
+  onend: (() => void) | null;
+  start(): void; stop(): void;
+}
+interface SpeechRecognitionResultEvent extends Event { results: SpeechRecognitionResultList; }
+interface SpeechRecognitionResultList { [i: number]: SpeechRecognitionResult; length: number; }
+interface SpeechRecognitionResult { [i: number]: SpeechRecognitionAlternative; length: number; }
+interface SpeechRecognitionAlternative { transcript: string; confidence: number; }
+
+interface Message {
+  role: "user" | "assistant";
+  content: string;
+  image?: { base64: string; mediaType: string; dataUrl: string };
+}
+
+function getSavedPersona(): Persona | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const id = localStorage.getItem("ello-persona");
+    return PERSONAS.find((p) => p.id === id) || null;
+  } catch { return null; }
+}
+function savePersona(p: Persona) {
+  try { localStorage.setItem("ello-persona", p.id); } catch {}
+}
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="https://nextjs.org/icons/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [persona, setPersona] = useState<Persona | null>(null);
+  const [showSelect, setShowSelect] = useState(true);
+  const [showTicketPage, setShowTicketPage] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [lastAssistantText, setLastAssistantText] = useState("");
+  const [checkedIn, setCheckedIn] = useState(false);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="https://nextjs.org/icons/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+
+  const tickets = useTickets();
+
+  useEffect(() => {
+    const saved = getSavedPersona();
+    if (saved) { setPersona(saved); setShowSelect(false); }
+  }, []);
+
+  useEffect(() => {
+    if (persona && !showSelect && messages.length === 0) {
+      const greeting: Message = { role: "assistant", content: persona.greeting };
+      setMessages([greeting]);
+      setLastAssistantText(persona.greeting);
+    }
+  }, [persona, showSelect, messages.length]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  function handlePersonaSelect(p: Persona) {
+    setPersona(p); savePersona(p); setMessages([]); setShowSelect(false);
+  }
+
+  function handleChangeCharacter() {
+    window.speechSynthesis?.cancel(); setShowSelect(true);
+  }
+
+  /* ── Screens ── */
+  if (showSelect) {
+    return <CharacterSelect onSelect={handlePersonaSelect} initialId={persona?.id} />;
+  }
+  if (showTicketPage) {
+    return <TicketPage state={tickets.state} onClose={() => setShowTicketPage(false)} />;
+  }
+
+  /* ── Helpers ── */
+  function createRecognition(): SpeechRecognition | null {
+    if (typeof window === "undefined") return null;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return null;
+    const r = new SR(); r.lang = "ko-KR"; r.continuous = false; r.interimResults = false;
+    return r;
+  }
+
+  function playTTS(text: string) {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const clean = text
+      .replace(/[\u{1F000}-\u{1FFFF}|\u{2600}-\u{27FF}|\u{2300}-\u{23FF}|\u{FE00}-\u{FEFF}|\u{1F900}-\u{1F9FF}]/gu, "")
+      .replace(/\s{2,}/g, " ").trim();
+    if (!clean) return;
+    const u = new SpeechSynthesisUtterance(clean);
+    u.lang = "ko-KR"; u.rate = 0.9; u.pitch = 1.1;
+    const voices = window.speechSynthesis.getVoices();
+    const ko = voices.find((v) => v.lang.startsWith("ko"));
+    if (ko) u.voice = ko;
+    u.onstart = () => setIsSpeaking(true);
+    u.onend = () => setIsSpeaking(false);
+    u.onerror = () => setIsSpeaking(false);
+    window.speechSynthesis.speak(u);
+  }
+
+  function stopOrReplayTTS() {
+    if (isSpeaking) { window.speechSynthesis.cancel(); setIsSpeaking(false); }
+    else if (lastAssistantText) playTTS(lastAssistantText);
+  }
+
+  /* ── Chat JSX (inline to keep state access simple) ── */
+  return <ChatUI
+    persona={persona!} messages={messages} setMessages={(m) => { setMessages(m); messagesRef.current = m; }}
+    input={input} setInput={setInput}
+    isLoading={isLoading} setIsLoading={setIsLoading}
+    isListening={isListening} setIsListening={setIsListening}
+    isSpeaking={isSpeaking} lastAssistantText={lastAssistantText} setLastAssistantText={setLastAssistantText}
+    chatEndRef={chatEndRef} recognitionRef={recognitionRef} fileInputRef={fileInputRef} messagesRef={messagesRef}
+    playTTS={playTTS} stopOrReplayTTS={stopOrReplayTTS} createRecognition={createRecognition}
+    onChangeCharacter={handleChangeCharacter}
+    tickets={tickets} onShowTickets={() => setShowTicketPage(true)}
+    checkedIn={checkedIn} setCheckedIn={setCheckedIn}
+  />;
+}
+
+/* ── ChatUI Component ── */
+interface ChatUIProps {
+  persona: Persona;
+  messages: Message[]; setMessages: (m: Message[]) => void;
+  input: string; setInput: (s: string) => void;
+  isLoading: boolean; setIsLoading: (b: boolean) => void;
+  isListening: boolean; setIsListening: (b: boolean) => void;
+  isSpeaking: boolean;
+  lastAssistantText: string; setLastAssistantText: (s: string) => void;
+  chatEndRef: React.RefObject<HTMLDivElement>;
+  recognitionRef: React.MutableRefObject<SpeechRecognition | null>;
+  fileInputRef: React.RefObject<HTMLInputElement>;
+  messagesRef: React.MutableRefObject<Message[]>;
+  playTTS: (t: string) => void; stopOrReplayTTS: () => void;
+  createRecognition: () => SpeechRecognition | null;
+  onChangeCharacter: () => void;
+  tickets: ReturnType<typeof useTickets>;
+  onShowTickets: () => void;
+  checkedIn: boolean; setCheckedIn: (b: boolean) => void;
+}
+
+function ChatUI({
+  persona, messages, setMessages, input, setInput,
+  isLoading, setIsLoading, isListening, setIsListening, isSpeaking,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  lastAssistantText, setLastAssistantText,
+  chatEndRef, recognitionRef, fileInputRef, messagesRef,
+  playTTS, stopOrReplayTTS, createRecognition, onChangeCharacter,
+  tickets, onShowTickets, checkedIn, setCheckedIn,
+}: ChatUIProps) {
+
+  const sendMessage = useCallback(
+    async (textOverride?: string) => {
+      const text = textOverride || input.trim();
+      if (!text || isLoading) return;
+
+      // Earn chat point
+      tickets.earn("chat");
+
+      // Check-in detection
+      if (!checkedIn && /기분|안녕|잘 지|어떠/.test(text)) {
+        tickets.earn("checkin");
+        setCheckedIn(true);
+      }
+
+      // Singing detection
+      if (/노래|부르|singing/.test(text)) {
+        tickets.earn("sing");
+      }
+
+      const userMsg: Message = { role: "user", content: text };
+      const newMsgs = [...messagesRef.current, userMsg];
+      setMessages(newMsgs);
+      setInput("");
+      setIsLoading(true);
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: newMsgs, persona: persona.id }),
+        });
+        const data = await res.json();
+        const reply = data.error ? "죄송해요, 잠시 문제가 있었어요. 다시 말씀해주세요." : data.text;
+        setMessages([...newMsgs, { role: "assistant", content: reply }]);
+        setLastAssistantText(reply);
+        if (!data.error) playTTS(reply);
+      } catch {
+        setMessages([...newMsgs, { role: "assistant", content: "연결에 문제가 있어요." }]);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [input, isLoading, persona.id, messagesRef, setMessages, setInput, setIsLoading, setLastAssistantText, playTTS, tickets, checkedIn, setCheckedIn]
+  );
+
+  function startWordGame() {
+    tickets.earn("wordgame");
+    sendMessage("끝말잇기 하자! 소연이가 먼저 시작해줘.");
+  }
+
+  function compressImage(file: File, maxSizeKB = 900): Promise<{ base64: string; mediaType: string; dataUrl: string }> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const reader = new FileReader();
+      reader.onload = () => {
+        img.onload = () => {
+          let { width, height } = img;
+          const MAX = 1200;
+          if (width > MAX || height > MAX) { const s = MAX / Math.max(width, height); width = Math.round(width * s); height = Math.round(height * s); }
+          const c = document.createElement("canvas"); c.width = width; c.height = height;
+          c.getContext("2d")!.drawImage(img, 0, 0, width, height);
+          let q = 0.85; let d = c.toDataURL("image/jpeg", q);
+          while (d.length > maxSizeKB * 1365 && q > 0.3) { q -= 0.1; d = c.toDataURL("image/jpeg", q); }
+          resolve({ base64: d.split(",")[1], mediaType: "image/jpeg", dataUrl: d });
+        };
+        img.onerror = () => reject(new Error("Image load failed"));
+        img.src = reader.result as string;
+      };
+      reader.onerror = () => reject(new Error("File read failed"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || isLoading) return;
+    e.target.value = "";
+    tickets.earn("photo");
+    try {
+      const imageData = await compressImage(file);
+      const userMsg: Message = { role: "user", content: "이 사진 좀 봐주세요", image: imageData };
+      const newMsgs = [...messagesRef.current, userMsg];
+      setMessages(newMsgs);
+      setIsLoading(true);
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            persona: persona.id,
+            messages: newMsgs.map((m) => ({
+              role: m.role, content: m.content,
+              ...(m.image ? { image: { base64: m.image.base64, mediaType: m.image.mediaType } } : {}),
+            })),
+          }),
+        });
+        const data = await res.json();
+        const reply = data.error ? "죄송해요, 사진을 확인하는 데 문제가 있었어요." : data.text;
+        setMessages([...newMsgs, { role: "assistant", content: reply }]);
+        setLastAssistantText(reply);
+        if (!data.error) playTTS(reply);
+      } catch {
+        setMessages([...newMsgs, { role: "assistant", content: "연결에 문제가 있어요." }]);
+      } finally {
+        setIsLoading(false);
+      }
+    } catch (err) { console.error("[image] Failed:", err); }
+  }
+
+  const toggleListening = useCallback(() => {
+    if (isListening) { recognitionRef.current?.stop(); setIsListening(false); return; }
+    const r = createRecognition();
+    if (!r) { alert("음성 인식이 지원되지 않습니다. Chrome을 사용해주세요."); return; }
+    recognitionRef.current = r;
+    r.onresult = (ev) => { const t = ev.results[0][0].transcript; setInput(t); setTimeout(() => sendMessage(t), 300); };
+    r.onerror = () => setIsListening(false);
+    r.onend = () => setIsListening(false);
+    r.start(); setIsListening(true);
+  }, [isListening, sendMessage, recognitionRef, setIsListening, setInput, createRecognition]);
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  }
+
+  return (
+    <div className="flex flex-col h-dvh max-w-app mx-auto bg-cream relative">
+
+      {/* Toast notification */}
+      {tickets.toast && <TicketToast points={tickets.toast.points} label={tickets.toast.label} />}
+
+      {/* ── Header ── */}
+      <header className="flex items-center justify-between px-5 py-3.5 bg-cream">
+        <div className="flex items-center gap-1.5">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="#FF6B35" stroke="none">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+          </svg>
+          <span className="text-warm-brown font-bold text-xl tracking-tight">Ello</span>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+
+        <div className="flex items-center gap-2">
+          {/* Ticket counter */}
+          <button
+            onClick={onShowTickets}
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-coral-pastel rounded-full hover:bg-coral/15 transition-colors"
+          >
+            <span className="text-sm">&#x2B50;</span>
+            <span className="text-coral font-bold text-[13px]">{tickets.state.total}</span>
+          </button>
+
+          {/* Persona badge */}
+          <span className="text-[11px] font-medium px-2 py-1 rounded-full"
+            style={{ background: persona.iconBg, color: persona.color }}>
+            {persona.name}
+          </span>
+
+          {/* Settings gear */}
+          <button onClick={onChangeCharacter}
+            className="w-8 h-8 rounded-full bg-coral-pastel flex items-center justify-center hover:bg-coral/15 transition-colors"
+            aria-label="캐릭터 변경">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FF6B35" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      {/* ── Chat area ── */}
+      <div className="flex-1 overflow-y-auto chat-scroll px-4 py-3 space-y-3">
+        {messages.length <= 1 && (
+          <div className="flex flex-col items-center pt-4 pb-2">
+            <SoyeonAvatar size={140} speaking={isSpeaking} showLabel />
+          </div>
+        )}
+
+        {messages.map((msg, i) => (
+          <div key={i} className={`flex items-end gap-2 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+            {msg.role === "assistant" && (
+              <div className="shrink-0 mb-1">
+                <SoyeonAvatar size={40} speaking={isSpeaking && i === messages.length - 1} />
+              </div>
+            )}
+            <div className={`max-w-[78%] px-4 py-3 text-[15px] leading-relaxed ${
+              msg.role === "user"
+                ? "bg-coral text-white rounded-[20px] rounded-br-[6px] shadow-sm shadow-coral/15"
+                : "bg-warm-white text-warm-gray rounded-[20px] rounded-bl-[6px] shadow-sm shadow-warm-gray/8"
+            }`}>
+              {msg.image && <img src={msg.image.dataUrl} alt="사진" className="rounded-2xl mb-2 max-h-44 w-auto" />}
+              {msg.content}
+            </div>
+          </div>
+        ))}
+
+        {isLoading && (
+          <div className="flex items-end gap-2 justify-start">
+            <div className="shrink-0 mb-1"><SoyeonAvatar size={40} /></div>
+            <div className="bg-warm-white px-5 py-3.5 rounded-[20px] rounded-bl-[6px] shadow-sm shadow-warm-gray/8">
+              <span className="inline-flex gap-1.5">
+                <span className="w-2 h-2 bg-coral/40 rounded-full animate-bounce" />
+                <span className="w-2 h-2 bg-coral/40 rounded-full animate-bounce" style={{ animationDelay: "0.15s" }} />
+                <span className="w-2 h-2 bg-coral/40 rounded-full animate-bounce" style={{ animationDelay: "0.3s" }} />
+              </span>
+            </div>
+          </div>
+        )}
+        <div ref={chatEndRef} />
+      </div>
+
+      {/* ── Quick suggestions + 끝말잇기 ── */}
+      <div className="px-4 pb-2 flex gap-2 overflow-x-auto no-scrollbar">
+        {["오늘 기분은 어떠세요?", "점심은 드셨어요?", "몸은 괜찮으세요?"].map((t) => (
+          <button key={t} onClick={() => sendMessage(t)}
+            className="px-3.5 py-2 bg-coral-pastel text-coral-dark rounded-full text-[13px] font-medium hover:bg-coral/15 active:bg-coral/20 transition-colors whitespace-nowrap shrink-0">
+            {t}
+          </button>
+        ))}
+        <button onClick={startWordGame}
+          className="px-3.5 py-2 bg-coral/10 text-coral rounded-full text-[13px] font-bold hover:bg-coral/20 active:bg-coral/25 transition-colors whitespace-nowrap shrink-0 border border-coral/20">
+          &#x1F3AE; 끝말잇기
+        </button>
+      </div>
+
+      {/* ── Bottom bar ── */}
+      <div className="bg-cream border-t border-warm-gray-light/15 px-4 pt-3 pb-5">
+        <div className="mb-3">
+          <div className="flex items-end gap-2">
+            <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
+              placeholder="소연이에게 말씀해주세요..." rows={1}
+              className="flex-1 px-4 py-3 bg-warm-white rounded-2xl border border-warm-gray-light/15 text-[15px] text-warm-gray placeholder:text-warm-gray-light/50 focus:outline-none focus:border-coral/30 focus:ring-2 focus:ring-coral/10 resize-none min-h-[46px]" />
+            {input.trim() && (
+              <button onClick={() => sendMessage()} disabled={isLoading}
+                className="w-[46px] h-[46px] bg-coral text-white rounded-full flex items-center justify-center shrink-0 shadow-sm shadow-coral/20 active:scale-95 transition-all disabled:opacity-50"
+                aria-label="보내기">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center justify-center gap-6">
+          <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleImageUpload} className="hidden" />
+          <ImageButton onClick={() => fileInputRef.current?.click()} disabled={isLoading} />
+          <VoiceButton isListening={isListening} onClick={toggleListening} disabled={isLoading} />
+          <SpeakerButton isSpeaking={isSpeaking} onClick={stopOrReplayTTS} />
+        </div>
+        {isListening && <p className="text-center text-sm text-coral mt-2 animate-pulse font-medium">듣고 있어요... 말씀해주세요</p>}
+      </div>
     </div>
   );
 }
