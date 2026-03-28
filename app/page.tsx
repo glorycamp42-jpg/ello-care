@@ -10,6 +10,7 @@ import { useTickets } from "@/components/useTickets";
 import TicketToast from "@/components/TicketToast";
 import TicketPage from "@/components/TicketPage";
 import RemindersPage from "@/components/RemindersPage";
+import BiblePage from "@/components/BiblePage";
 import { parseMemories } from "@/lib/parseMemory";
 
 /* ── Web Speech API types ── */
@@ -53,6 +54,7 @@ export default function Home() {
   const [showSelect, setShowSelect] = useState(true);
   const [showTicketPage, setShowTicketPage] = useState(false);
   const [showReminders, setShowReminders] = useState(false);
+  const [showBible, setShowBible] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -141,6 +143,20 @@ export default function Home() {
   }
   if (showReminders) {
     return <RemindersPage onClose={() => setShowReminders(false)} />;
+  }
+  if (showBible) {
+    return <BiblePage
+      onClose={() => setShowBible(false)}
+      onComplete={() => {
+        tickets.earn("checkin"); // +2 for completing Bible reading
+        tickets.earn("chat");   // +1 bonus
+        setShowBible(false);
+        const msg = "오늘 말씀 다 읽으셨어요! 은혜로운 하루 되세요.";
+        setMessages((prev) => [...prev, { role: "assistant", content: msg }]);
+        setLastAssistantText(msg);
+        playTTS(msg);
+      }}
+    />;
   }
 
   /* ── Helpers ── */
@@ -232,6 +248,7 @@ export default function Home() {
     onChangeCharacter={handleChangeCharacter}
     tickets={tickets} onShowTickets={() => setShowTicketPage(true)}
     onShowReminders={() => setShowReminders(true)}
+    onShowBible={() => setShowBible(true)}
     checkedIn={checkedIn} setCheckedIn={setCheckedIn}
   />;
 }
@@ -255,6 +272,7 @@ interface ChatUIProps {
   tickets: ReturnType<typeof useTickets>;
   onShowTickets: () => void;
   onShowReminders: () => void;
+  onShowBible: () => void;
   checkedIn: boolean; setCheckedIn: (b: boolean) => void;
 }
 
@@ -265,7 +283,7 @@ function ChatUI({
   lastAssistantText, setLastAssistantText,
   chatEndRef, recognitionRef, fileInputRef, messagesRef,
   playTTS, stopOrReplayTTS, createRecognition, onChangeCharacter,
-  tickets, onShowTickets, onShowReminders, checkedIn, setCheckedIn,
+  tickets, onShowTickets, onShowReminders, onShowBible, checkedIn, setCheckedIn,
 }: ChatUIProps) {
 
   // Save parsed memories to Supabase
@@ -510,6 +528,10 @@ function ChatUI({
         <button onClick={startWordGame}
           className="px-3.5 py-2 bg-coral/10 text-coral rounded-full text-[13px] font-bold hover:bg-coral/20 active:bg-coral/25 transition-colors whitespace-nowrap shrink-0 border border-coral/20">
           &#x1F3AE; 끝말잇기
+        </button>
+        <button onClick={onShowBible}
+          className="px-3.5 py-2 bg-coral/10 text-coral rounded-full text-[13px] font-bold hover:bg-coral/20 active:bg-coral/25 transition-colors whitespace-nowrap shrink-0 border border-coral/20">
+          &#x1F4D6; 성경
         </button>
         <button onClick={onShowReminders}
           className="px-3.5 py-2 bg-coral/10 text-coral rounded-full text-[13px] font-bold hover:bg-coral/20 active:bg-coral/25 transition-colors whitespace-nowrap shrink-0 border border-coral/20">
