@@ -3,11 +3,11 @@
 import { useState, useEffect, useRef } from "react";
 import Lottie, { LottieRefCurrentProps } from "lottie-react";
 
-const LOTTIE_URLS: Record<string, string> = {
-  granddaughter: "https://assets2.lottiefiles.com/packages/lf20_myejiggj.json",
-  oldfriend: "https://assets2.lottiefiles.com/packages/lf20_ystsffqy.json",
-  church: "https://assets2.lottiefiles.com/packages/lf20_xlmz9xwm.json",
-  assistant: "https://assets2.lottiefiles.com/packages/lf20_v1yudlrx.json",
+const LOTTIE_PATHS: Record<string, string> = {
+  granddaughter: "/animations/grandchild.json",
+  oldfriend: "/animations/friend.json",
+  church: "/animations/church.json",
+  assistant: "/animations/secretary.json",
 };
 
 interface CharacterAvatarProps {
@@ -41,7 +41,7 @@ export default function CharacterAvatar({
 
   // Load Lottie JSON
   useEffect(() => {
-    const url = LOTTIE_URLS[personaId] || LOTTIE_URLS.granddaughter;
+    const url = LOTTIE_PATHS[personaId] || LOTTIE_PATHS.granddaughter;
     setAnimationData(null);
     setLoadFailed(false);
 
