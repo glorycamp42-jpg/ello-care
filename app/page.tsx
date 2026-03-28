@@ -13,6 +13,8 @@ import RemindersPage from "@/components/RemindersPage";
 import BiblePage from "@/components/BiblePage";
 import SafetyPage from "@/components/SafetyPage";
 import { findContactByKeyword } from "@/components/SafetyPage";
+import LanguageSelect from "@/components/LanguageSelect";
+import { Language, getSavedLang } from "@/lib/i18n";
 import { parseMemories } from "@/lib/parseMemory";
 
 /* ── Web Speech API types ── */
@@ -52,6 +54,8 @@ function savePersona(p: Persona) {
 }
 
 export default function Home() {
+  const [lang, setLang] = useState<Language | null>(null);
+  const [showLangSelect, setShowLangSelect] = useState(true);
   const [persona, setPersona] = useState<Persona | null>(null);
   const [showSelect, setShowSelect] = useState(true);
   const [showTicketPage, setShowTicketPage] = useState(false);
@@ -77,6 +81,14 @@ export default function Home() {
   const tickets = useTickets();
 
   useEffect(() => {
+    // Load saved language
+    const savedLang = getSavedLang();
+    const hasLang = typeof window !== "undefined" && localStorage.getItem("ello-language");
+    if (hasLang) {
+      setLang(savedLang);
+      setShowLangSelect(false);
+    }
+    // Load saved persona
     const saved = getSavedPersona();
     if (saved) { setPersona(saved); setShowSelect(false); }
   }, []);
@@ -137,7 +149,20 @@ export default function Home() {
     window.speechSynthesis?.cancel(); setShowSelect(true);
   }
 
+  function handleLangSelect(l: Language) {
+    setLang(l);
+    setShowLangSelect(false);
+  }
+
+  function handleChangeLanguage() {
+    window.speechSynthesis?.cancel();
+    setShowLangSelect(true);
+  }
+
   /* ── Screens ── */
+  if (showLangSelect) {
+    return <LanguageSelect onSelect={handleLangSelect} initialCode={lang?.code} />;
+  }
   if (showSelect) {
     return <CharacterSelect onSelect={handlePersonaSelect} initialId={persona?.id} />;
   }
@@ -256,6 +281,8 @@ export default function Home() {
     onShowReminders={() => setShowReminders(true)}
     onShowBible={() => setShowBible(true)}
     onShowSafety={() => setShowSafety(true)}
+    onChangeLang={handleChangeLanguage}
+    lang={lang || getSavedLang()}
     checkedIn={checkedIn} setCheckedIn={setCheckedIn}
   />;
 }
@@ -281,6 +308,8 @@ interface ChatUIProps {
   onShowReminders: () => void;
   onShowBible: () => void;
   onShowSafety: () => void;
+  onChangeLang: () => void;
+  lang: Language;
   checkedIn: boolean; setCheckedIn: (b: boolean) => void;
 }
 
@@ -291,7 +320,7 @@ function ChatUI({
   lastAssistantText, setLastAssistantText,
   chatEndRef, recognitionRef, fileInputRef, messagesRef,
   playTTS, stopOrReplayTTS, createRecognition, onChangeCharacter,
-  tickets, onShowTickets, onShowReminders, onShowBible, onShowSafety, checkedIn, setCheckedIn,
+  tickets, onShowTickets, onShowReminders, onShowBible, onShowSafety, onChangeLang, lang, checkedIn, setCheckedIn,
 }: ChatUIProps) {
 
   // Save parsed memories to Supabase
@@ -343,7 +372,7 @@ function ChatUI({
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: newMsgs, persona: persona.id }),
+          body: JSON.stringify({ messages: newMsgs, persona: persona.id, langPrompt: lang.systemPrompt }),
         });
         const data = await res.json();
         const rawReply = data.error ? "죄송해요, 잠시 문제가 있었어요. 다시 말씀해주세요." : data.text;
@@ -468,6 +497,13 @@ function ChatUI({
             <span className="text-coral font-bold text-[13px]">{tickets.state.total}</span>
           </button>
 
+          {/* Language flag button */}
+          <button onClick={onChangeLang}
+            className="w-8 h-8 rounded-full bg-coral-pastel flex items-center justify-center hover:bg-coral/15 transition-colors text-sm"
+            aria-label="언어 변경">
+            {lang.flag}
+          </button>
+
           {/* Persona badge */}
           <span className="text-[11px] font-medium px-2 py-1 rounded-full"
             style={{ background: persona.iconBg, color: persona.color }}>
@@ -537,7 +573,7 @@ function ChatUI({
 
       {/* ── Quick suggestions + 끝말잇기 ── */}
       <div className="px-4 pb-2 flex gap-2 overflow-x-auto no-scrollbar">
-        {["오늘 기분은 어떠세요?", "점심은 드셨어요?", "몸은 괜찮으세요?"].map((t) => (
+        {lang.ui.quickButtons.map((t) => (
           <button key={t} onClick={() => sendMessage(t)}
             className="px-3.5 py-2 bg-coral-pastel text-coral-dark rounded-full text-[13px] font-medium hover:bg-coral/15 active:bg-coral/20 transition-colors whitespace-nowrap shrink-0">
             {t}
@@ -545,15 +581,15 @@ function ChatUI({
         ))}
         <button onClick={startWordGame}
           className="px-3.5 py-2 bg-coral/10 text-coral rounded-full text-[13px] font-bold hover:bg-coral/20 active:bg-coral/25 transition-colors whitespace-nowrap shrink-0 border border-coral/20">
-          &#x1F3AE; 끝말잇기
+          {lang.ui.wordGame}
         </button>
         <button onClick={onShowBible}
           className="px-3.5 py-2 bg-coral/10 text-coral rounded-full text-[13px] font-bold hover:bg-coral/20 active:bg-coral/25 transition-colors whitespace-nowrap shrink-0 border border-coral/20">
-          &#x1F4D6; 성경
+          {lang.ui.bible}
         </button>
         <button onClick={onShowReminders}
           className="px-3.5 py-2 bg-coral/10 text-coral rounded-full text-[13px] font-bold hover:bg-coral/20 active:bg-coral/25 transition-colors whitespace-nowrap shrink-0 border border-coral/20">
-          &#x1F4C5; 일정
+          {lang.ui.schedule}
         </button>
       </div>
 
@@ -562,7 +598,7 @@ function ChatUI({
         <div className="mb-3">
           <div className="flex items-end gap-2">
             <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
-              placeholder="소연이에게 말씀해주세요..." rows={1}
+              placeholder={lang.ui.placeholder} rows={1}
               className="flex-1 px-4 py-3 bg-warm-white rounded-2xl border border-warm-gray-light/15 text-[15px] text-warm-gray placeholder:text-warm-gray-light/50 focus:outline-none focus:border-coral/30 focus:ring-2 focus:ring-coral/10 resize-none min-h-[46px]" />
             {input.trim() && (
               <button onClick={() => sendMessage()} disabled={isLoading}
@@ -581,7 +617,7 @@ function ChatUI({
           <VoiceButton isListening={isListening} onClick={toggleListening} disabled={isLoading} />
           <SpeakerButton isSpeaking={isSpeaking} onClick={stopOrReplayTTS} />
         </div>
-        {isListening && <p className="text-center text-sm text-coral mt-2 animate-pulse font-medium">듣고 있어요... 말씀해주세요</p>}
+        {isListening && <p className="text-center text-sm text-coral mt-2 animate-pulse font-medium">{lang.ui.listening}</p>}
       </div>
 
       {/* ── Bottom Tab Navigation ── */}
@@ -593,7 +629,7 @@ function ChatUI({
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
               <polyline points="9 22 9 12 15 12 15 22" />
             </svg>
-            <span className="text-[10px] font-medium">홈</span>
+            <span className="text-[10px] font-medium">{lang.ui.home}</span>
           </button>
 
           {/* 대화 - currently active */}
@@ -601,7 +637,7 @@ function ChatUI({
             <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
-            <span className="text-[10px] font-bold">대화</span>
+            <span className="text-[10px] font-bold">{lang.ui.chat}</span>
           </button>
 
           {/* 일정 */}
@@ -612,7 +648,7 @@ function ChatUI({
               <line x1="8" y1="2" x2="8" y2="6" />
               <line x1="3" y1="10" x2="21" y2="10" />
             </svg>
-            <span className="text-[10px] font-medium">일정</span>
+            <span className="text-[10px] font-medium">{lang.ui.schedule}</span>
           </button>
 
           {/* 성경 */}
@@ -623,7 +659,7 @@ function ChatUI({
               <line x1="12" y1="6" x2="12" y2="13" />
               <line x1="9" y1="9" x2="15" y2="9" />
             </svg>
-            <span className="text-[10px] font-medium">성경</span>
+            <span className="text-[10px] font-medium">{lang.ui.bible}</span>
           </button>
 
           {/* 안전 */}
@@ -633,7 +669,7 @@ function ChatUI({
               <line x1="12" y1="8" x2="12" y2="12" />
               <line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
-            <span className="text-[10px] font-medium">안전</span>
+            <span className="text-[10px] font-medium">{lang.ui.safety}</span>
           </button>
         </div>
       </nav>

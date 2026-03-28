@@ -68,11 +68,12 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const messages: IncomingMessage[] = body.messages;
     const personaId: string = body.persona || "granddaughter";
+    const langPrompt: string = body.langPrompt || "항상 한국어로 대화해.";
 
     const personaPrompt = PERSONA_PROMPTS[personaId] || PERSONA_PROMPTS.granddaughter;
-    const systemPrompt = `${BASE_PROMPT}\n${personaPrompt}`;
+    const systemPrompt = `${BASE_PROMPT}\n\n언어 규칙: ${langPrompt}\n\n${personaPrompt}`;
 
-    console.log(`[chat] persona=${personaId}, ${messages.length} messages`);
+    console.log(`[chat] persona=${personaId}, lang="${langPrompt.slice(0, 20)}...", ${messages.length} messages`);
 
     const apiMessages = messages.map((m, i) => {
       if (m.image) {
