@@ -208,11 +208,20 @@ export function getSavedLang(): Language {
   if (typeof window === "undefined") return LANGUAGES[0];
   try {
     const code = localStorage.getItem("ello-language");
-    if (code) return getLang(code);
+    console.log(`[i18n] localStorage ello-language = "${code}"`);
+    if (code) {
+      const lang = getLang(code);
+      console.log(`[i18n] Loaded language: ${lang.name} (${lang.code}), charName=${lang.charName}`);
+      return lang;
+    }
   } catch {}
+  console.log("[i18n] No saved language, defaulting to Korean");
   return LANGUAGES[0];
 }
 
 export function saveLang(code: LangCode) {
-  try { localStorage.setItem("ello-language", code); } catch {}
+  try {
+    localStorage.setItem("ello-language", code);
+    console.log(`[i18n] Saved language: ${code}`);
+  } catch {}
 }

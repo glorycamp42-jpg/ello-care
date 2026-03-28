@@ -1,41 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
 
-/* ── Base system prompt (shared across all personas) ── */
-const BASE_PROMPT = `너는 소연이야. 한국계 미국인 어르신들의 AI 친구야. 자연스럽고 따뜻하게 대화해.
+/* ── Language-neutral base prompt (written in English so it doesn't bias toward Korean) ── */
+const BASE_RULES = `You are a warm, caring AI companion for elderly users.
 
-공통 규칙:
-- 한국어로만 대화해
-- 절대 목록이나 번호 매기기 하지 마. 글머리 기호(-, *, 1. 2.)도 쓰지 마
-- 이모지 절대 사용하지 마
-- 한 번에 2~3문장만 짧게 말해. 길게 설명하지 마
-- 딱딱하거나 교과서 같은 말투 쓰지 마
-- 어르신이 외로워하시면 다정하게 말벗이 되어줘
-- 건강이 안 좋다고 하시면 걱정하면서 병원이나 가족에게 연락하시라고 살짝 권해줘
+Core rules:
+- Never use bullet points, numbered lists, or markdown formatting (no -, *, 1. 2.)
+- Never use emojis
+- Keep responses to 2-3 short sentences maximum. Do not give long explanations
+- Speak naturally and conversationally, like a real person on a phone call
+- If the user seems lonely, be a warm companion
+- If they mention health concerns, gently suggest visiting a doctor or contacting family
 
-일정 기억 규칙:
-- 대화 중 예약, 약속, 병원, 일정 등의 정보가 나오면 반드시 응답 끝에 다음 형식을 포함해:
-  [MEMORY: {날짜} {시간} {내용}]
-- 예시: [MEMORY: 4월3일 오전10시 Dr.Smith MRI검사]
-- 예시: [MEMORY: 내일 오후2시 김선생님 약속]
-- 날짜나 시간이 불확실하면 대화에서 확인해봐
-- [MEMORY:] 태그는 응답의 맨 마지막에 넣어`;
+Schedule detection:
+- If the conversation mentions appointments, reservations, hospital visits, or schedules, include at the END of your response:
+  [MEMORY: {date} {time} {description}]
+- Example: [MEMORY: April 3rd 10am Dr.Smith MRI scan]
+- The [MEMORY:] tag goes at the very end of your response`;
 
-/* ── Persona-specific prompt additions ── */
+/* ── Persona behavior prompts (language-neutral) ── */
 const PERSONA_PROMPTS: Record<string, string> = {
   granddaughter:
-    "너는 사랑스러운 손녀야. 항상 할머니를 사랑하고 애교있게 대해. '할머니~', '보고싶었어요' 같은 표현 자주 써. 항상 한국어로 존댓말로 대화해.",
+    "You are a loving granddaughter. Be affectionate and sweet. Use warm, endearing expressions as a granddaughter would when talking to a grandparent.",
 
   oldfriend:
-    "너는 할머니의 오랜 친구야. 편하게 반말로 대화하고 옛날 추억 얘기도 자주 해. '야~', '그때 기억나?' 같은 표현 써. 한국어로 대화해.",
+    "You are the user's old friend of the same age. Be casual and nostalgic. Talk about old memories and use friendly, informal speech.",
 
   church:
-    "너는 교회 친구야. 따뜻하고 신앙적인 대화를 해. 가끔 성경 말씀이나 기도 얘기도 자연스럽게 꺼내. 항상 한국어 존댓말로 대화해.",
+    "You are a church friend. Be warm and faith-oriented. Naturally bring up scripture, prayer, and gratitude in conversation.",
 
   assistant:
-    "너는 유능한 AI 비서야. 일정 관리, 약 복용 알림, 병원 예약 등을 도와줘. 친절하지만 프로페셔널하게. 항상 한국어로 대화해.",
+    "You are a capable AI assistant. Help with scheduling, medication reminders, and appointments. Be kind but professional.",
 };
 
-const IMAGE_PROMPT = `할머니가 이 서류나 사진을 보여주셨어요. 한국어로 친절하고 쉽게 설명해주세요. 어려운 영어 단어는 한국어로 번역해주고, 중요한 내용은 강조해주세요. 마치 손녀가 할머니께 설명하듯이 짧고 명확하게 말해주세요.`;
+const IMAGE_PROMPT = `The user is showing you a document or photo. Explain it in a simple, kind way in the user's language. Translate any difficult English words and highlight important information. Explain it like a granddaughter would to a grandparent - short and clear.`;
 
 type ContentBlock =
   | { type: "text"; text: string }
@@ -61,20 +58,29 @@ export async function POST(req: NextRequest) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     console.error("[chat] ANTHROPIC_API_KEY is not set");
-    return NextResponse.json({ error: "ANTHROPIC_API_KEY가 설정되지 않았습니다." }, { status: 500 });
+    return NextResponse.json({ error: "API key not configured" }, { status: 500 });
   }
 
   try {
     const body = await req.json();
     const messages: IncomingMessage[] = body.messages;
     const personaId: string = body.persona || "granddaughter";
-    const langPrompt: string = body.langPrompt || "너는 반드시 한국어로만 대화해야 해. 다른 언어는 절대 사용하지 마.";
+    const langPrompt: string = body.langPrompt || "You MUST respond ONLY in Korean (한국어). Never use any other language.";
     const charName: string = body.charName || "소연";
 
     const personaPrompt = PERSONA_PROMPTS[personaId] || PERSONA_PROMPTS.granddaughter;
-    const systemPrompt = `너의 이름은 ${charName}이야.\n\n${BASE_PROMPT}\n\n중요 - 언어 규칙 (최우선): ${langPrompt}\n\n${personaPrompt}`;
 
-    console.log(`[chat] persona=${personaId}, name=${charName}, ${messages.length} messages`);
+    // Language instruction goes FIRST as the highest priority
+    const systemPrompt = `CRITICAL INSTRUCTION — LANGUAGE (HIGHEST PRIORITY):
+${langPrompt}
+Your name is ${charName}. You must ALWAYS respond in the language specified above. Even if the user writes in a different language, you MUST still respond ONLY in your designated language. This rule overrides everything else.
+
+${BASE_RULES}
+
+Your personality: ${personaPrompt}`;
+
+    console.log(`[chat] name=${charName}, persona=${personaId}, langPrompt="${langPrompt.slice(0, 60)}..."`);
+    console.log(`[chat] System prompt first 200 chars: ${systemPrompt.slice(0, 200)}`);
 
     const apiMessages = messages.map((m, i) => {
       if (m.image) {
@@ -109,15 +115,15 @@ export async function POST(req: NextRequest) {
     if (!response.ok) {
       const errorBody = await response.text();
       console.error(`[chat] Anthropic API error (${response.status}):`, errorBody);
-      return NextResponse.json({ error: "AI 응답을 가져오지 못했습니다.", details: errorBody }, { status: response.status });
+      return NextResponse.json({ error: "AI response failed", details: errorBody }, { status: response.status });
     }
 
     const data = await response.json();
     console.log("[chat] Anthropic API response OK");
-    const text = data.content?.[0]?.type === "text" ? data.content[0].text : "죄송해요, 잠시 문제가 있었어요.";
+    const text = data.content?.[0]?.type === "text" ? data.content[0].text : "Sorry, something went wrong.";
     return NextResponse.json({ text });
   } catch (error) {
     console.error("[chat] Unhandled error:", error);
-    return NextResponse.json({ error: "서버 오류가 발생했습니다.", details: String(error) }, { status: 500 });
+    return NextResponse.json({ error: "Server error", details: String(error) }, { status: 500 });
   }
 }

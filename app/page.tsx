@@ -374,6 +374,7 @@ function ChatUI({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ messages: newMsgs, persona: persona.id, langPrompt: lang.systemPrompt, charName: lang.charName }),
         });
+        console.log(`[chat-ui] Sent: lang=${lang.code}, charName=${lang.charName}, langPrompt="${lang.systemPrompt.slice(0, 50)}..."`);
         const data = await res.json();
         const rawReply = data.error ? "죄송해요, 잠시 문제가 있었어요. 다시 말씀해주세요." : data.text;
 
