@@ -62,6 +62,7 @@ export default function Home() {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const ttsAbortRef = useRef<AbortController | null>(null);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
 
@@ -109,21 +110,50 @@ export default function Home() {
     return r;
   }
 
+  function stopCurrentAudio() {
+    // Abort any in-flight TTS fetch
+    if (ttsAbortRef.current) {
+      ttsAbortRef.current.abort();
+      ttsAbortRef.current = null;
+    }
+    // Stop and clean up any playing audio
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current.onplay = null;
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null;
+      const src = audioRef.current.src;
+      audioRef.current = null;
+      if (src.startsWith("blob:")) URL.revokeObjectURL(src);
+    }
+    setIsSpeaking(false);
+  }
+
   async function playTTS(text: string) {
     if (!persona) return;
-    try {
-      // Stop any current audio
-      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
 
+    // Always stop previous audio/request first
+    stopCurrentAudio();
+
+    const controller = new AbortController();
+    ttsAbortRef.current = controller;
+
+    try {
       const res = await fetch("/api/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, voiceId: persona.voiceId }),
+        signal: controller.signal,
       });
 
+      // If aborted while waiting, exit silently
+      if (controller.signal.aborted) return;
       if (!res.ok) return;
 
       const blob = await res.blob();
+      if (controller.signal.aborted) return;
+
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
       audioRef.current = audio;
@@ -133,16 +163,16 @@ export default function Home() {
       audio.onerror = () => { setIsSpeaking(false); URL.revokeObjectURL(url); audioRef.current = null; };
 
       await audio.play();
-    } catch {
+    } catch (err) {
+      // Ignore abort errors
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setIsSpeaking(false);
     }
   }
 
   function stopOrReplayTTS() {
-    if (isSpeaking && audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-      setIsSpeaking(false);
+    if (isSpeaking || audioRef.current) {
+      stopCurrentAudio();
     } else if (lastAssistantText) {
       playTTS(lastAssistantText);
     }
