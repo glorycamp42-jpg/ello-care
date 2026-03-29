@@ -20,7 +20,15 @@ export async function signInWithEmail(email: string, password: string) {
   const sb = getSupabase();
   if (!sb) throw new Error("Supabase not configured");
   const { data, error } = await sb.auth.signInWithPassword({ email, password });
-  if (error) throw error;
+  if (error) {
+    if (error.message?.includes("Email not confirmed")) {
+      throw new Error("이메일 인증이 필요합니다. Supabase 대시보드에서 이메일 인증을 비활성화하거나, 관리자에게 문의하세요.");
+    }
+    if (error.message?.includes("Invalid login credentials")) {
+      throw new Error("이메일 또는 비밀번호가 올바르지 않습니다.");
+    }
+    throw error;
+  }
   return data;
 }
 
@@ -30,9 +38,18 @@ export async function signUp(email: string, password: string, metadata: { name: 
   const { data, error } = await sb.auth.signUp({
     email,
     password,
-    options: { data: metadata },
+    options: {
+      data: metadata,
+      emailRedirectTo: undefined, // skip email confirmation redirect
+    },
   });
-  if (error) throw error;
+  if (error) {
+    // If user exists but unconfirmed, try signing in directly
+    if (error.message?.includes("already registered")) {
+      throw new Error("이미 가입된 이메일입니다. 로그인을 시도해주세요.");
+    }
+    throw error;
+  }
   return data;
 }
 
