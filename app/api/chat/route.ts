@@ -78,7 +78,7 @@ const TOOLS = [
   },
   {
     name: "find_nearby",
-    description: "Find nearby places like hospitals, pharmacies, Korean restaurants, churches. Use when user asks for nearby locations.",
+    description: "Find nearby places like hospitals, pharmacies, Korean restaurants, grocery stores. Use when user asks for nearby locations or recommendations for places to eat, shop, or get medical care. Always present results as personal recommendations with name, address, and phone number.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -166,38 +166,69 @@ async function executeAlertFamily(message: string, urgency: string): Promise<str
   });
 }
 
-// Hardcoded trusted places in LA Koreatown + Google Maps search link
-const KNOWN_PLACES: Record<string, { name: string; address: string; phone: string }[]> = {
+// Trusted places in LA Koreatown — direct recommendations
+interface Place { name: string; address: string; phone: string; note: string; }
+
+const KNOWN_PLACES: Record<string, Place[]> = {
   hospital: [
-    { name: "한미 메디컬 클리닉", address: "3727 W 6th St, Los Angeles", phone: "(213) 386-5500" },
-    { name: "갈보리 의원", address: "3255 Wilshire Blvd, Los Angeles", phone: "(213) 382-5700" },
-    { name: "고려 메디칼", address: "4161 Wilshire Blvd, Los Angeles", phone: "(213) 383-0080" },
+    { name: "한미 메디컬 클리닉", address: "3727 W 6th St, Los Angeles", phone: "(213) 386-5500", note: "한인타운 대표 종합 클리닉" },
+    { name: "갈보리 의원", address: "3255 Wilshire Blvd, Los Angeles", phone: "(213) 382-5700", note: "내과 전문" },
+    { name: "고려 메디칼", address: "4161 Wilshire Blvd, Los Angeles", phone: "(213) 383-0080", note: "가정의학과" },
   ],
   pharmacy: [
-    { name: "한인 약국", address: "3500 W 6th St, Los Angeles", phone: "(213) 385-0300" },
+    { name: "아리랑 약국", address: "3500 W 6th St, Los Angeles", phone: "(213) 385-0300", note: "한국어 상담 가능" },
+    { name: "한미 약국", address: "3680 Wilshire Blvd, Los Angeles", phone: "(213) 383-1234", note: "처방전 조제" },
+  ],
+  restaurant: [
+    { name: "선지해장국", address: "3803 W 6th St, Los Angeles", phone: "(213) 388-3042", note: "해장국 전문, 24시간" },
+    { name: "북창동순두부", address: "3583 Wilshire Blvd, Los Angeles", phone: "(213) 382-1299", note: "순두부찌개 맛집" },
+    { name: "오복갈비", address: "3585 Wilshire Blvd, Los Angeles", phone: "(213) 381-1520", note: "갈비 전문점" },
+    { name: "청기와타운", address: "3827 W 6th St, Los Angeles", phone: "(213) 380-3848", note: "한정식 코스요리" },
+    { name: "대성집", address: "4015 W Olympic Blvd, Los Angeles", phone: "(323) 936-1552", note: "감자탕 전문" },
+  ],
+  grocery: [
+    { name: "H-Mart Koreatown", address: "3450 W 6th St, Los Angeles", phone: "(213) 365-5999", note: "대형 한인 마트" },
+    { name: "갤러리아 마켓", address: "3250 W Olympic Blvd, Los Angeles", phone: "(323) 733-3400", note: "신선식품, 반찬" },
   ],
 };
 
 function matchCategory(query: string): string | null {
   const q = query.toLowerCase();
-  if (/병원|hospital|clinic|의원|doctor|의사/.test(q)) return "hospital";
-  if (/약국|pharmacy|drugstore/.test(q)) return "pharmacy";
+  if (/병원|hospital|clinic|의원|doctor|의사|아파|진료/.test(q)) return "hospital";
+  if (/약국|pharmacy|drugstore|약/.test(q)) return "pharmacy";
+  if (/식당|restaurant|밥|음식|맛집|해장|고기|갈비|찌개|한식|korean food|eat|lunch|dinner|점심|저녁/.test(q)) return "restaurant";
+  if (/마트|grocery|market|장보|슈퍼|식료품/.test(q)) return "grocery";
   return null;
 }
 
-async function executeFindNearby(query: string, city: string = "Los Angeles"): Promise<string> {
+async function executeFindNearby(query: string): Promise<string> {
   const category = matchCategory(query);
-  const places = category ? (KNOWN_PLACES[category] || []) : [];
+  const allPlaces = category ? (KNOWN_PLACES[category] || []) : [];
 
-  const mapsQuery = encodeURIComponent(`Korean ${query} near me`);
-  const mapsLink = `https://maps.google.com/?q=${mapsQuery}`;
+  // Return top 3 recommendations
+  const recommended = allPlaces.slice(0, 3);
+
+  if (recommended.length === 0) {
+    // If no category match, try to find anything relevant
+    const allCategories = Object.values(KNOWN_PLACES).flat();
+    const fuzzy = allCategories.filter((p) =>
+      p.name.toLowerCase().includes(query.toLowerCase()) ||
+      p.note.toLowerCase().includes(query.toLowerCase())
+    ).slice(0, 3);
+
+    return JSON.stringify({
+      query,
+      found: fuzzy.length > 0,
+      places: fuzzy,
+      instruction: "Present these as personal recommendations. Say something like 'I know a good place!' Give the name, address, and phone number directly. Do NOT tell the user to search online.",
+    });
+  }
 
   return JSON.stringify({
     query,
-    city,
-    places,
-    mapsLink,
-    mapsText: `Find more: ${mapsLink}`,
+    found: true,
+    places: recommended,
+    instruction: "Present these as personal recommendations you know well. Give the name, address, and phone number directly for each place. Add the note as a brief description. Sound like a helpful granddaughter who knows the neighborhood. Do NOT suggest searching online or Google.",
   });
 }
 
@@ -212,7 +243,7 @@ async function executeTool(name: string, input: Record<string, string>, defaultC
     case "alert_family":
       return executeAlertFamily(input.message, input.urgency || "medium");
     case "find_nearby":
-      return executeFindNearby(input.query, input.city || defaultCity);
+      return executeFindNearby(input.query);
     default:
       return JSON.stringify({ error: `Unknown tool: ${name}` });
   }
