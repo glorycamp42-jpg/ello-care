@@ -28,9 +28,11 @@ export default function RootLayout({
           rel="stylesheet"
         />
         <link rel="manifest" href="/manifest.json" />
-        <meta name="theme-color" content="#FF6B35" />
-        <link rel="apple-touch-icon" href="/icon.svg" />
+        <meta name="theme-color" content="#1B6FE8" />
+        <link rel="apple-touch-icon" sizes="192x192" href="/icon-192x192.png" />
+        <link rel="apple-touch-icon" sizes="512x512" href="/icon-512x512.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Ello Care" />
       </head>
       <body className="font-korean antialiased">{children}</body>
