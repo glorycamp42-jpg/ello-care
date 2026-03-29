@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { getSavedLang } from "@/lib/i18n";
+import { getSavedLang, LangCode } from "@/lib/i18n";
 
 /* ── Character persona definitions ── */
 export interface Persona {
@@ -15,6 +15,42 @@ export interface Persona {
   color: string;
   iconBg: string;
 }
+
+/* ── Translated names and samples per language ── */
+const PERSONA_I18N: Record<string, Record<LangCode, { name: string; sample: string }>> = {
+  granddaughter: {
+    ko: { name: "손주처럼", sample: "사랑해요 할머니!" },
+    en: { name: "Like a Grandchild", sample: "I love you, Grandma!" },
+    es: { name: "Como un nieto", sample: "¡Te quiero, abuelita!" },
+    zh: { name: "像孙子一样", sample: "奶奶我爱你！" },
+    vi: { name: "Như cháu", sample: "Con yêu bà!" },
+    ja: { name: "孫のように", sample: "おばあちゃん大好き！" },
+  },
+  oldfriend: {
+    ko: { name: "옛친구처럼", sample: "오랜만이야, 잘 지냈어?" },
+    en: { name: "Like an Old Friend", sample: "Long time no see! How've you been?" },
+    es: { name: "Como un viejo amigo", sample: "¡Cuánto tiempo! ¿Cómo has estado?" },
+    zh: { name: "像老朋友一样", sample: "好久不见，最近怎么样？" },
+    vi: { name: "Như bạn cũ", sample: "Lâu rồi không gặp! Dạo này sao rồi?" },
+    ja: { name: "旧友のように", sample: "久しぶり！元気だった？" },
+  },
+  church: {
+    ko: { name: "교회친구처럼", sample: "오늘 말씀 들었어요?" },
+    en: { name: "Like a Church Friend", sample: "Did you hear today's sermon?" },
+    es: { name: "Como un amigo de iglesia", sample: "¿Escuchaste el sermón de hoy?" },
+    zh: { name: "像教会朋友一样", sample: "今天的讲道听了吗？" },
+    vi: { name: "Như bạn nhà thờ", sample: "Hôm nay bạn nghe bài giảng chưa?" },
+    ja: { name: "教会の友のように", sample: "今日の説教聞いた？" },
+  },
+  assistant: {
+    ko: { name: "비서처럼", sample: "일정 도와드릴게요" },
+    en: { name: "Like an Assistant", sample: "Let me help with your schedule" },
+    es: { name: "Como un asistente", sample: "Déjame ayudarte con tu agenda" },
+    zh: { name: "像秘书一样", sample: "让我帮你安排日程" },
+    vi: { name: "Như trợ lý", sample: "Để tôi giúp bạn sắp xếp lịch" },
+    ja: { name: "秘書のように", sample: "スケジュールをお手伝いします" },
+  },
+};
 
 export const PERSONAS: Persona[] = [
   {
@@ -67,6 +103,13 @@ export const PERSONAS: Persona[] = [
   },
 ];
 
+/* ── Helper to get translated name/sample ── */
+function getPersonaText(personaId: string, langCode: LangCode) {
+  const t = PERSONA_I18N[personaId]?.[langCode];
+  if (t) return t;
+  return PERSONA_I18N[personaId]?.ko || { name: personaId, sample: "" };
+}
+
 /* ── Character Selection Screen ── */
 interface CharacterSelectProps {
   onSelect: (persona: Persona) => void;
@@ -104,6 +147,7 @@ export default function CharacterSelect({ onSelect, initialId }: CharacterSelect
         <div className="grid grid-cols-2 gap-3">
           {PERSONAS.map((p) => {
             const isActive = selected === p.id;
+            const t = getPersonaText(p.id, lang.code);
             return (
               <button
                 key={p.id}
@@ -134,15 +178,15 @@ export default function CharacterSelect({ onSelect, initialId }: CharacterSelect
                 {/* Emoji */}
                 <span className="text-[40px] leading-none">{p.emoji}</span>
 
-                {/* Name */}
-                <span className="text-warm-brown font-bold text-[15px] mt-3">{p.name}</span>
+                {/* Translated Name */}
+                <span className="text-warm-brown font-bold text-[15px] mt-3">{t.name}</span>
 
-                {/* Sample phrase pill */}
+                {/* Translated Sample phrase pill */}
                 <span
                   className="text-[12px] mt-2.5 px-2.5 py-1 rounded-full font-medium leading-tight"
                   style={{ background: p.iconBg, color: p.color }}
                 >
-                  &ldquo;{p.sample}&rdquo;
+                  &ldquo;{t.sample}&rdquo;
                 </span>
               </button>
             );
