@@ -35,74 +35,116 @@ export default function ElderLogin() {
   }
 
   return (
-    <div className="min-h-dvh bg-[#F0F7FF] flex flex-col items-center justify-center px-6">
-      <div className="w-full max-w-sm">
+    <div style={{
+      minHeight: "100dvh",
+      background: "#F0F7FF",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "24px",
+      fontFamily: "'Noto Sans KR', sans-serif",
+    }}>
+      <div style={{ width: "100%", maxWidth: 400 }}>
+
         {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-[#1B6FE8] flex items-center justify-center mx-auto mb-4">
-            <span className="text-white text-3xl font-bold">E</span>
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <div style={{
+            width: 64, height: 64, borderRadius: 16,
+            background: "#1B6FE8",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            margin: "0 auto 16px",
+          }}>
+            <span style={{ color: "white", fontSize: 32, fontWeight: 700 }}>E</span>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Ello Care</h1>
-          <p className="text-gray-500 text-base mt-1">소연이와 함께해요</p>
+          <h1 style={{ fontSize: 28, fontWeight: 700, color: "#111", margin: 0 }}>Ello Care</h1>
+          <p style={{ fontSize: 16, color: "#888", marginTop: 6 }}>소연이와 함께해요</p>
         </div>
 
-        {/* Login Form */}
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-gray-700 text-lg font-medium mb-2">이메일</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="email@example.com"
-              required
-              className="w-full px-5 py-4 bg-white rounded-2xl border border-gray-200
-                         text-lg text-gray-900 placeholder:text-gray-400
-                         focus:outline-none focus:border-[#1B6FE8] focus:ring-2 focus:ring-[#1B6FE8]/20"
-            />
-          </div>
-          <div>
-            <label className="block text-gray-700 text-lg font-medium mb-2">비밀번호</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="비밀번호를 입력하세요"
-              required
-              className="w-full px-5 py-4 bg-white rounded-2xl border border-gray-200
-                         text-lg text-gray-900 placeholder:text-gray-400
-                         focus:outline-none focus:border-[#1B6FE8] focus:ring-2 focus:ring-[#1B6FE8]/20"
-            />
-          </div>
+        {/* Form */}
+        <form onSubmit={handleLogin}>
+          {/* Email */}
+          <label style={{ display: "block", fontSize: 16, fontWeight: 600, color: "#444", marginBottom: 8 }}>
+            이메일
+          </label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="email@example.com"
+            required
+            style={{
+              width: "100%", padding: 14, fontSize: 16,
+              background: "#fff", border: "1px solid #ddd", borderRadius: 12,
+              outline: "none", boxSizing: "border-box", marginBottom: 16,
+              color: "#111",
+            }}
+            onFocus={(e) => { e.currentTarget.style.borderColor = "#1B6FE8"; }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = "#ddd"; }}
+          />
 
+          {/* Password */}
+          <label style={{ display: "block", fontSize: 16, fontWeight: 600, color: "#444", marginBottom: 8 }}>
+            비밀번호
+          </label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="비밀번호를 입력하세요"
+            required
+            style={{
+              width: "100%", padding: 14, fontSize: 16,
+              background: "#fff", border: "1px solid #ddd", borderRadius: 12,
+              outline: "none", boxSizing: "border-box", marginBottom: 16,
+              color: "#111",
+            }}
+            onFocus={(e) => { e.currentTarget.style.borderColor = "#1B6FE8"; }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = "#ddd"; }}
+          />
+
+          {/* Error */}
           {error && (
-            <p className="text-red-500 text-sm text-center bg-red-50 rounded-xl py-2">{error}</p>
+            <p style={{
+              color: "#e53e3e", fontSize: 14, textAlign: "center",
+              background: "#fff5f5", borderRadius: 10, padding: "10px 12px",
+              marginBottom: 16,
+            }}>{error}</p>
           )}
 
+          {/* Login Button */}
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-4 bg-[#1B6FE8] text-white rounded-2xl text-lg font-bold
-                       shadow-md shadow-[#1B6FE8]/25 hover:bg-[#1558C0]
-                       active:scale-[0.98] transition-all disabled:opacity-50"
+            style={{
+              width: "100%", padding: 16, fontSize: 18, fontWeight: 700,
+              background: loading ? "#7aacf0" : "#1B6FE8", color: "#fff",
+              border: "none", borderRadius: 12, cursor: loading ? "default" : "pointer",
+              boxShadow: "0 4px 12px rgba(27,111,232,0.25)",
+              marginBottom: 0,
+            }}
           >
             {loading ? "로그인 중..." : "로그인"}
           </button>
         </form>
 
         {/* Divider */}
-        <div className="flex items-center gap-3 my-5">
-          <div className="flex-1 h-px bg-gray-200" />
-          <span className="text-gray-400 text-sm">또는</span>
-          <div className="flex-1 h-px bg-gray-200" />
+        <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "20px 0" }}>
+          <div style={{ flex: 1, height: 1, background: "#ddd" }} />
+          <span style={{ color: "#aaa", fontSize: 14 }}>또는</span>
+          <div style={{ flex: 1, height: 1, background: "#ddd" }} />
         </div>
 
-        {/* Google Login */}
+        {/* Google Button */}
         <button
           onClick={handleGoogle}
-          className="w-full py-4 bg-white border border-gray-200 rounded-2xl text-base font-medium text-gray-700
-                     flex items-center justify-center gap-3
-                     hover:bg-gray-50 active:scale-[0.98] transition-all"
+          style={{
+            width: "100%", padding: 14, fontSize: 16, fontWeight: 500,
+            background: "#fff", color: "#444",
+            border: "1px solid #ddd", borderRadius: 12,
+            cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+          }}
         >
           <svg width="20" height="20" viewBox="0 0 24 24">
             <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
@@ -113,17 +155,15 @@ export default function ElderLogin() {
           구글로 로그인
         </button>
 
-        {/* Sign up link */}
-        <p className="text-center mt-6 text-gray-500 text-base">
+        {/* Links */}
+        <p style={{ textAlign: "center", marginTop: 24, fontSize: 16, color: "#888" }}>
           계정이 없으신가요?{" "}
-          <Link href="/login/signup" className="text-[#1B6FE8] font-bold">
+          <Link href="/login/signup" style={{ color: "#1B6FE8", fontWeight: 700, textDecoration: "none" }}>
             회원가입
           </Link>
         </p>
-
-        {/* Family link */}
-        <p className="text-center mt-3 text-gray-400 text-sm">
-          <Link href="/family/login" className="underline">
+        <p style={{ textAlign: "center", marginTop: 12, fontSize: 14, color: "#aaa" }}>
+          <Link href="/family/login" style={{ color: "#aaa", textDecoration: "underline" }}>
             가족 로그인은 여기
           </Link>
         </p>
