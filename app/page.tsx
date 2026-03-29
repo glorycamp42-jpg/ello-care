@@ -5,7 +5,7 @@ import CharacterAvatar from "@/components/CharacterAvatar";
 import VoiceButton from "@/components/VoiceButton";
 import ImageButton from "@/components/ImageButton";
 import SpeakerButton from "@/components/SpeakerButton";
-import CharacterSelect, { PERSONAS, Persona } from "@/components/CharacterSelect";
+import CharacterSelect, { PERSONAS, Persona, getPersonaText } from "@/components/CharacterSelect";
 import { useTickets } from "@/components/useTickets";
 import TicketToast from "@/components/TicketToast";
 import TicketPage from "@/components/TicketPage";
@@ -555,7 +555,7 @@ function ChatUI({
           {/* Persona badge */}
           <span className="text-[11px] font-medium px-2 py-1 rounded-full"
             style={{ background: persona.iconBg, color: persona.color }}>
-            {persona.name}
+            {getPersonaText(persona.id, lang.code).name}
           </span>
 
           {/* Settings gear */}

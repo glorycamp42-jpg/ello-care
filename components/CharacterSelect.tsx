@@ -104,7 +104,7 @@ export const PERSONAS: Persona[] = [
 ];
 
 /* ── Helper to get translated name/sample ── */
-function getPersonaText(personaId: string, langCode: LangCode) {
+export function getPersonaText(personaId: string, langCode: LangCode) {
   const t = PERSONA_I18N[personaId]?.[langCode];
   if (t) return t;
   return PERSONA_I18N[personaId]?.ko || { name: personaId, sample: "" };
