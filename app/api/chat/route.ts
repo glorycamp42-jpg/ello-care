@@ -295,11 +295,20 @@ function parseAppointments(text: string): { cleanText: string; appointments: Par
   return { cleanText, appointments };
 }
 
-async function saveAppointments(appointments: ParsedAppointment[], elderId: string) {
-  const supabase = getSupabaseAdmin();
-  if (!supabase) { console.error("[appointment] Supabase admin client is null!"); return; }
-  if (appointments.length === 0) return;
+async function saveAppointments(appointments: ParsedAppointment[], elderId: string): Promise<boolean> {
+  if (elderId === "default") {
+    console.error("[appointment] elder_id is default - skipping save");
+    return false;
+  }
 
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    console.error("[appointment] Supabase admin client is null!");
+    return false;
+  }
+  if (appointments.length === 0) return false;
+
+  let saved = false;
   for (const apt of appointments) {
     const row = {
       elder_id: elderId,
@@ -314,11 +323,19 @@ async function saveAppointments(appointments: ParsedAppointment[], elderId: stri
     console.log("[appointment] Inserting row:", JSON.stringify(row));
     const { data, error } = await supabase.from("appointments").insert(row).select();
     if (error) {
-      console.error("[appointment] DB INSERT error:", error.message, error.details, error.hint);
+      console.error("[appointment] INSERT ERROR:", JSON.stringify(error));
+      console.error("[appointment] error.message:", error.message);
+      console.error("[appointment] error.code:", error.code);
+      console.error("[appointment] error.details:", error.details);
+      console.error("[appointment] error.hint:", error.hint);
+    } else if (data && data.length > 0) {
+      console.log(`[appointment] DB 저장 성공: id=${data[0].id}, title=${apt.title}`);
+      saved = true;
     } else {
-      console.log(`[appointment] DB 저장 성공: id=${data?.[0]?.id}, title=${apt.title}`);
+      console.error("[appointment] INSERT returned no data and no error - RLS might be blocking");
     }
   }
+  return saved;
 }
 
 /* ── Types ── */
@@ -342,6 +359,7 @@ function cleanBase64(raw: string): string {
 
 /* ── Main Handler ── */
 export async function POST(req: NextRequest) {
+  console.log('[chat] API ROUTE CALLED');
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "API key not configured" }, { status: 500 });
@@ -473,10 +491,12 @@ When using tools, always present the results naturally in your designated langua
     const { cleanText, appointments } = parseAppointments(rawText);
     console.log(`[chat] Inline [APPOINTMENT] blocks found: ${appointments.length}`);
 
+    let didSave = false;
+
     if (appointments.length > 0) {
       console.log(`[chat] Saving ${appointments.length} inline appointment(s)...`);
-      await saveAppointments(appointments, elderId);
-      console.log(`[chat] DB 저장 완료 (inline)`);
+      didSave = await saveAppointments(appointments, elderId);
+      console.log(`[chat] Inline save result: ${didSave}`);
     } else {
       // Fallback: separate extraction call if user mentioned schedule-related keywords
       const hasScheduleKeywords = /병원|약국|ADHC|진료|예약|방문|약속|appointment|doctor|pharmacy|시에|시 에|월.*일/i.test(lastUserMsg + " " + rawText);
@@ -517,11 +537,10 @@ AI응답: ${rawText}`,
                 console.log(`[chat] 파싱된 JSON:`, JSON.stringify(apt));
                 if (apt && apt.title) {
                   console.log(`[chat] Saving extracted appointment: ${apt.title} (${apt.type})`);
-                  await saveAppointments([apt], elderId);
-                  console.log(`[chat] DB 저장 완료 (extracted)`);
+                  const extractSaved = await saveAppointments([apt], elderId);
+                  console.log(`[chat] Extraction save result: ${extractSaved}`);
                   const text = cleanText || rawText;
-                  console.log(`[chat] Final response (${text.length} chars), appointments=1 (extracted)`);
-                  return NextResponse.json({ text, appointmentSaved: true });
+                  return NextResponse.json({ text, appointmentSaved: extractSaved });
                 }
               } catch {
                 console.log("[chat] Extraction JSON parse failed, skipping");
@@ -535,8 +554,8 @@ AI응답: ${rawText}`,
     }
 
     const text = cleanText || rawText;
-    console.log(`[chat] Final response (${text.length} chars), appointments=${appointments.length}`);
-    return NextResponse.json({ text, appointmentSaved: appointments.length > 0 });
+    console.log(`[chat] Final response (${text.length} chars), didSave=${didSave}`);
+    return NextResponse.json({ text, appointmentSaved: didSave });
 
   } catch (error) {
     console.error("[chat] Unhandled error:", error);

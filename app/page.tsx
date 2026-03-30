@@ -103,13 +103,17 @@ export default function Home() {
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
       );
-      sb.auth.getUser().then(({ data }) => {
-        if (data.user?.id) {
-          setUserId(data.user.id);
-          console.log("[auth] User ID:", data.user.id);
+      sb.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user?.id) {
+          setUserId(session.user.id);
+          console.log("[auth] User ID from session:", session.user.id);
+        } else {
+          console.log("[auth] No session found, userId stays 'default'");
         }
       });
-    } catch {}
+    } catch (err) {
+      console.error("[auth] Failed to get session:", err);
+    }
 
     // Load saved location or request geolocation
     try {
@@ -409,7 +413,8 @@ function ChatUI({
   const sendMessage = useCallback(
     async (textOverride?: string) => {
       const text = textOverride || input.trim();
-      if (!text || isLoading) return;
+      console.log(`[sendMessage] called, text="${text}", isLoading=${isLoading}, input="${input}"`);
+      if (!text || isLoading) { console.log("[sendMessage] BLOCKED: empty text or isLoading"); return; }
 
       tickets.earn("chat");
 
@@ -437,12 +442,13 @@ function ChatUI({
       setInput("");
       setIsLoading(true);
       try {
+        console.log(`[sendMessage] Fetching /api/chat with ${newMsgs.length} messages, userId=${userId}`);
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ messages: newMsgs, persona: persona.id, langPrompt: lang.systemPrompt, charName: lang.charName, userCity, userId }),
         });
-        console.log(`[chat-ui] Sent: lang=${lang.code}, charName=${lang.charName}, langPrompt="${lang.systemPrompt.slice(0, 50)}..."`);
+        console.log(`[sendMessage] Response status: ${res.status}`);
         const data = await res.json();
         const rawReply = data.error ? "죄송해요, 잠시 문제가 있었어요. 다시 말씀해주세요." : data.text;
 
@@ -513,6 +519,10 @@ function ChatUI({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             persona: persona.id,
+            langPrompt: lang.systemPrompt,
+            charName: lang.charName,
+            userCity,
+            userId,
             messages: newMsgs.map((m) => ({
               role: m.role, content: m.content,
               ...(m.image ? { image: { base64: m.image.base64, mediaType: m.image.mediaType } } : {}),
