@@ -40,7 +40,7 @@ export default function FamilyLogin() {
   async function handleGoogle() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: window.location.origin + "/family" },
+      options: { redirectTo: window.location.origin + "/auth/callback" },
     });
     if (error) setError(error.message);
   }
