@@ -29,29 +29,51 @@ export default function AppointmentsPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    init();
-  }, []);
-
-  async function init() {
-    const { data: { session } } = await supabase.auth.getSession();
-    const familyId = session?.user?.id;
-    if (!familyId) { setLoading(false); return; }
-
-    // Find elder via family_links
-    const { data: links } = await supabase
-      .from("family_links")
-      .select("elder_id")
-      .eq("family_id", familyId)
-      .limit(1);
-
-    const elderId = links?.[0]?.elder_id || familyId;
-
-    const res = await fetch(`/api/appointments?userId=${elderId}`);
+  async function fetchAppointments(eid: string) {
+    const res = await fetch(`/api/appointments?userId=${eid}`);
     const data = await res.json();
     setAppointments(data.appointments || []);
-    setLoading(false);
   }
+
+  useEffect(() => {
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    async function init() {
+      const { data: { session } } = await supabase.auth.getSession();
+      const familyId = session?.user?.id;
+      if (!familyId) { setLoading(false); return; }
+
+      const { data: links } = await supabase
+        .from("family_links")
+        .select("elder_id")
+        .eq("family_id", familyId)
+        .limit(1);
+
+      const eid = links?.[0]?.elder_id || familyId;
+      await fetchAppointments(eid);
+      setLoading(false);
+
+      // Realtime subscription
+      channel = supabase
+        .channel("appointments-realtime")
+        .on("postgres_changes", {
+          event: "INSERT",
+          schema: "public",
+          table: "appointments",
+          filter: `elder_id=eq.${eid}`,
+        }, () => {
+          console.log("[family-appointments] Realtime: new appointment detected");
+          fetchAppointments(eid);
+        })
+        .subscribe();
+    }
+
+    init();
+
+    return () => {
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, []);
 
   function formatDate(iso: string): string {
     try {
