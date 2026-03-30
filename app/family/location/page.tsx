@@ -1,43 +1,69 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getElderLocation, getLocationHistory, ElderLocation } from "@/lib/family-db";
-import { getSupabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
 
-const ELDER_ID = "default";
+interface LocationData {
+  id: string;
+  user_id: string;
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  created_at: string;
+}
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export default function LocationPage() {
-  const [current, setCurrent] = useState<ElderLocation | null>(null);
-  const [history, setHistory] = useState<ElderLocation[]>([]);
+  const [current, setCurrent] = useState<LocationData | null>(null);
+  const [history, setHistory] = useState<LocationData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [elderId, setElderId] = useState<string | null>(null);
 
   useEffect(() => {
-    loadLocation();
-    const cleanup = subscribeRealtime();
-    return cleanup;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    init();
   }, []);
 
-  async function loadLocation() {
-    setLoading(true);
-    setCurrent(await getElderLocation(ELDER_ID));
-    setHistory(await getLocationHistory(ELDER_ID, 10));
-    setLoading(false);
-  }
+  async function init() {
+    const { data: { session } } = await supabase.auth.getSession();
+    const familyId = session?.user?.id;
+    if (!familyId) { setLoading(false); return; }
 
-  function subscribeRealtime(): () => void {
-    const supabase = getSupabase();
-    if (!supabase) return () => {};
-    const channel = supabase
+    const { data: links } = await supabase
+      .from("family_links")
+      .select("elder_id")
+      .eq("family_id", familyId)
+      .limit(1);
+
+    const eid = links?.[0]?.elder_id || familyId;
+    setElderId(eid);
+
+    const { data: locData } = await supabase
+      .from("gps_locations")
+      .select("*")
+      .eq("user_id", eid)
+      .order("created_at", { ascending: false })
+      .limit(10);
+
+    if (locData && locData.length > 0) {
+      setCurrent(locData[0]);
+      setHistory(locData);
+    }
+    setLoading(false);
+
+    // Realtime subscription
+    supabase
       .channel("gps-realtime")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "gps_locations", filter: `user_id=eq.${ELDER_ID}` },
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "gps_locations", filter: `user_id=eq.${eid}` },
         (payload) => {
-          const loc = payload.new as ElderLocation;
+          const loc = payload.new as LocationData;
           setCurrent(loc);
           setHistory((prev) => [loc, ...prev].slice(0, 10));
         })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
   }
 
   function timeAgo(iso: string): string {
@@ -51,12 +77,10 @@ export default function LocationPage() {
 
   return (
     <div>
-      {/* Blue header */}
       <div className="bg-gradient-to-br from-[#1B6FE8] to-[#3D8BF2] rounded-b-[28px] px-5 pt-8 pb-7">
         <p className="text-blue-200 text-xs font-medium">Ello Family</p>
         <h1 className="text-white text-xl font-bold mt-0.5 mb-4">위치 추적</h1>
 
-        {/* Current location */}
         {current ? (
           <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-4">
             <div className="flex items-center justify-between mb-3">
@@ -73,37 +97,32 @@ export default function LocationPage() {
                 <p className="text-white font-mono font-bold text-sm">{current.longitude.toFixed(5)}</p>
               </div>
             </div>
-            {current.accuracy && (
-              <p className="text-white/40 text-[10px] text-center mt-2">정확도 ±{Math.round(current.accuracy)}m</p>
-            )}
+            {current.accuracy && <p className="text-white/40 text-[10px] text-center mt-2">정확도 ±{Math.round(current.accuracy)}m</p>}
           </div>
         ) : (
           <div className="bg-white/15 rounded-2xl p-6 text-center">
-            <p className="text-white/60 text-sm">위치 데이터가 아직 없습니다</p>
+            <p className="text-white/60 text-sm">{loading ? "불러오는 중..." : "위치 데이터가 아직 없습니다"}</p>
           </div>
         )}
       </div>
 
       <div className="px-5 -mt-3">
-        {/* Realtime indicator */}
-        <div className="bg-white rounded-xl shadow-sm p-3 flex items-center gap-2.5 mb-4">
-          <span className="relative flex h-2.5 w-2.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
-          </span>
-          <span className="text-sm text-gray-500">실시간 업데이트 활성</span>
-        </div>
+        {elderId && (
+          <div className="bg-white rounded-xl shadow-sm p-3 flex items-center gap-2.5 mb-4">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
+            </span>
+            <span className="text-sm text-gray-500">실시간 업데이트 활성</span>
+          </div>
+        )}
 
-        {/* History */}
         <div className="bg-white rounded-xl shadow-sm p-4">
           <div className="flex items-center gap-2 mb-3">
             <span className="w-8 h-8 rounded-lg bg-[#EBF3FF] flex items-center justify-center text-base">🕐</span>
             <h3 className="font-bold text-sm text-gray-900">위치 기록</h3>
           </div>
-
-          {loading ? (
-            <p className="text-sm text-gray-400 text-center py-6">불러오는 중...</p>
-          ) : history.length === 0 ? (
+          {history.length === 0 ? (
             <p className="text-sm text-gray-400 text-center py-6">기록이 없습니다</p>
           ) : (
             <div className="space-y-2">
