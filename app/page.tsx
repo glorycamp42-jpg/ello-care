@@ -69,6 +69,7 @@ export default function Home() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [lastAssistantText, setLastAssistantText] = useState("");
   const [checkedIn, setCheckedIn] = useState(false);
+  const [appointmentToast, setAppointmentToast] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -330,6 +331,7 @@ export default function Home() {
     userCity={userCity}
     lang={lang || getSavedLang()}
     checkedIn={checkedIn} setCheckedIn={setCheckedIn}
+    appointmentToast={appointmentToast} setAppointmentToast={setAppointmentToast}
   />;
 }
 
@@ -358,6 +360,7 @@ interface ChatUIProps {
   userCity: string;
   lang: Language;
   checkedIn: boolean; setCheckedIn: (b: boolean) => void;
+  appointmentToast: boolean; setAppointmentToast: (b: boolean) => void;
 }
 
 function ChatUI({
@@ -367,7 +370,7 @@ function ChatUI({
   lastAssistantText, setLastAssistantText,
   chatEndRef, recognitionRef, fileInputRef, messagesRef,
   playTTS, stopOrReplayTTS, createRecognition, onChangeCharacter,
-  tickets, onShowTickets, onShowReminders, onShowBible, onShowSafety, onChangeLang, userCity, lang, checkedIn, setCheckedIn,
+  tickets, onShowTickets, onShowReminders, onShowBible, onShowSafety, onChangeLang, userCity, lang, checkedIn, setCheckedIn, appointmentToast, setAppointmentToast,
 }: ChatUIProps) {
 
   // Save parsed memories to Supabase
@@ -428,6 +431,12 @@ function ChatUI({
         // Parse and save any [MEMORY:] tags
         const { cleanText: reply, memories } = parseMemories(rawReply);
         if (memories.length > 0) saveMemories(memories);
+
+        // Show toast if appointment was auto-saved
+        if (data.appointmentSaved) {
+          setAppointmentToast(true);
+          setTimeout(() => setAppointmentToast(false), 3000);
+        }
 
         setMessages([...newMsgs, { role: "assistant", content: reply }]);
         setLastAssistantText(reply);
@@ -525,6 +534,19 @@ function ChatUI({
 
       {/* Toast notification */}
       {tickets.toast && <TicketToast points={tickets.toast.points} label={tickets.toast.label} />}
+
+      {/* Appointment saved toast */}
+      {appointmentToast && (
+        <div style={{
+          position: "fixed", top: 60, left: "50%", transform: "translateX(-50%)", zIndex: 50,
+          background: "#fff", borderRadius: 16, boxShadow: "0 4px 20px rgba(27,111,232,0.15)",
+          padding: "12px 20px", display: "flex", alignItems: "center", gap: 8,
+          border: "1px solid #e0ecff",
+        }}>
+          <span style={{ fontSize: 20 }}>📅</span>
+          <span style={{ color: "#1B6FE8", fontWeight: 700, fontSize: 14 }}>일정이 저장되었습니다</span>
+        </div>
+      )}
 
       {/* ── Header ── */}
       <header className="flex items-center justify-between px-5 py-3.5 bg-cream">

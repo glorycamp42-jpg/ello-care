@@ -15,7 +15,14 @@ Core rules:
 
 Schedule detection:
 - If the conversation mentions appointments, reservations, hospital visits, or schedules, include at the END of your response:
-  [MEMORY: {date} {time} {description}]`;
+  [MEMORY: {date} {time} {description}]
+
+Appointment auto-save:
+- When the user mentions 병원, 약국, ADHC, 진료, 예약, 방문, doctor, appointment, pharmacy, or any scheduled event, you MUST include a JSON block at the very end of your response in this exact format:
+  [APPOINTMENT]{"title":"진료명","type":"hospital","location":"장소","scheduled_at":"2026-03-30T10:00:00","notes":"메모"}[/APPOINTMENT]
+- type must be one of: hospital, adhc, pharmacy, other
+- scheduled_at should be ISO format if possible, or a descriptive date string
+- This block will be automatically parsed and saved. Do NOT mention saving to the user.`;
 
 const PERSONA_PROMPTS: Record<string, string> = {
   granddaughter: "You are a loving granddaughter. Be affectionate and sweet.",
@@ -249,6 +256,54 @@ async function executeTool(name: string, input: Record<string, string>, defaultC
   }
 }
 
+/* ── Appointment Parser ── */
+interface ParsedAppointment {
+  title: string;
+  type: string;
+  location: string;
+  scheduled_at: string;
+  notes: string;
+}
+
+function parseAppointments(text: string): { cleanText: string; appointments: ParsedAppointment[] } {
+  const appointments: ParsedAppointment[] = [];
+  const regex = /\[APPOINTMENT\]([\s\S]*?)\[\/APPOINTMENT\]/g;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    try {
+      const parsed = JSON.parse(match[1]);
+      if (parsed.title) appointments.push(parsed);
+    } catch {
+      console.error("[appointment] Failed to parse:", match[1]);
+    }
+  }
+  const cleanText = text.replace(/\[APPOINTMENT\][\s\S]*?\[\/APPOINTMENT\]/g, "").trim();
+  return { cleanText, appointments };
+}
+
+async function saveAppointments(appointments: ParsedAppointment[], elderId: string) {
+  const supabase = getSupabase();
+  if (!supabase || appointments.length === 0) return;
+
+  for (const apt of appointments) {
+    const { error } = await supabase.from("appointments").insert({
+      elder_id: elderId,
+      title: apt.title,
+      type: apt.type || "other",
+      date: apt.scheduled_at?.split("T")[0] || apt.scheduled_at || "",
+      time: apt.scheduled_at?.includes("T") ? apt.scheduled_at.split("T")[1]?.replace(":00", "") || "" : "",
+      location: apt.location || "",
+      notes: apt.notes || "",
+      source: "ello_ai",
+    });
+    if (error) {
+      console.error("[appointment] Insert error:", error.message);
+    } else {
+      console.log(`[appointment] Saved: ${apt.title} (${apt.type}) at ${apt.scheduled_at}`);
+    }
+  }
+}
+
 /* ── Types ── */
 type ContentBlock =
   | { type: "text"; text: string }
@@ -388,9 +443,19 @@ When using tools, always present the results naturally in your designated langua
       break;
     }
 
-    const text = finalText.trim() || "Sorry, something went wrong.";
-    console.log(`[chat] Final response (${text.length} chars)`);
-    return NextResponse.json({ text });
+    const rawText = finalText.trim() || "Sorry, something went wrong.";
+
+    // Parse and save appointments
+    const { cleanText, appointments } = parseAppointments(rawText);
+    const elderId = body.userId || "default";
+    if (appointments.length > 0) {
+      console.log(`[chat] Found ${appointments.length} appointment(s), saving for elder=${elderId}`);
+      await saveAppointments(appointments, elderId);
+    }
+
+    const text = cleanText || rawText;
+    console.log(`[chat] Final response (${text.length} chars), appointments=${appointments.length}`);
+    return NextResponse.json({ text, appointmentSaved: appointments.length > 0 });
 
   } catch (error) {
     console.error("[chat] Unhandled error:", error);
