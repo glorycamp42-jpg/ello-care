@@ -39,7 +39,7 @@ Appointment auto-save:
 - When the user mentions 병원, 약국, ADHC, 진료, 예약, 방문, doctor, appointment, pharmacy, or any scheduled event, you MUST include a JSON block at the very end of your response in this exact format:
   [APPOINTMENT]{"title":"진료명","type":"hospital","location":"장소","scheduled_at":"2026-03-30T10:00:00","notes":"메모"}[/APPOINTMENT]
 - type must be one of: hospital, adhc, pharmacy, other
-- scheduled_at should be ISO format if possible, or a descriptive date string
+- scheduled_at MUST be in ISO format (YYYY-MM-DDTHH:MM:SS). Calculate the actual date from relative expressions like "내일", "다음주", "모레" based on today's date.
 - This block will be automatically parsed and saved. Do NOT mention saving to the user.`;
 
 const PERSONA_PROMPTS: Record<string, string> = {
@@ -111,6 +111,17 @@ const TOOLS = [
         city: { type: "string", description: "City to search in, e.g. 'Los Angeles'" },
       },
       required: ["query"],
+    },
+  },
+  {
+    name: "get_appointments",
+    description: "Retrieve the user's saved appointments and schedules. Use when user asks to see their appointments, schedules, reservations, or says things like '내 예약 보여줘', '일정 확인', 'what are my appointments'.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        elder_id: { type: "string", description: "The user's ID to look up appointments for" },
+      },
+      required: ["elder_id"],
     },
   },
 ];
@@ -257,7 +268,38 @@ async function executeFindNearby(query: string): Promise<string> {
   });
 }
 
-async function executeTool(name: string, input: Record<string, string>, defaultCity: string): Promise<string> {
+async function executeGetAppointments(elderId: string): Promise<string> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return JSON.stringify({ appointments: [], error: "DB not configured" });
+
+  const { data, error } = await supabase
+    .from("appointments")
+    .select("*")
+    .eq("elder_id", elderId)
+    .order("scheduled_at", { ascending: true })
+    .limit(10);
+
+  if (error) {
+    console.error("[tool:get_appointments] Error:", error.message);
+    return JSON.stringify({ appointments: [], error: error.message });
+  }
+
+  const appointments = (data || []).map((a: Record<string, unknown>) => ({
+    title: a.title,
+    type: a.type,
+    location: a.location,
+    scheduled_at: a.scheduled_at,
+    notes: a.notes,
+  }));
+
+  console.log(`[tool:get_appointments] Found ${appointments.length} for elder=${elderId}`);
+  return JSON.stringify({
+    appointments,
+    instruction: "Present these appointments naturally in the user's language. For each one mention the title, date/time, and location. Be warm and helpful.",
+  });
+}
+
+async function executeTool(name: string, input: Record<string, string>, defaultCity: string, elderId: string): Promise<string> {
   switch (name) {
     case "get_weather":
       return executeGetWeather(input.city || defaultCity);
@@ -269,6 +311,8 @@ async function executeTool(name: string, input: Record<string, string>, defaultC
       return executeAlertFamily(input.message, input.urgency || "medium");
     case "find_nearby":
       return executeFindNearby(input.query);
+    case "get_appointments":
+      return executeGetAppointments(input.elder_id || elderId);
     default:
       return JSON.stringify({ error: `Unknown tool: ${name}` });
   }
@@ -380,15 +424,21 @@ export async function POST(req: NextRequest) {
 
     const personaPrompt = PERSONA_PROMPTS[personaId] || PERSONA_PROMPTS.granddaughter;
 
+    const today = new Date().toISOString().split("T")[0]; // e.g. 2026-03-29
+
     const systemPrompt = `CRITICAL INSTRUCTION — LANGUAGE (HIGHEST PRIORITY):
 ${langPrompt}
 Your name is ${charName}. You must ALWAYS respond in the language specified above. This rule overrides everything else.
+
+Today's date is: ${today}. Use this to calculate relative dates like "내일" (tomorrow), "모레" (day after tomorrow), "다음주" (next week). Always output scheduled_at in ISO format YYYY-MM-DDTHH:MM:SS.
 
 ${BASE_RULES}
 
 Your personality: ${personaPrompt}
 
 The user is located in: ${userCity}. When they ask about weather or nearby places without specifying a location, use "${userCity}" as the default city. Always use Fahrenheit (°F) for temperature.
+
+The user's ID is: ${body.userId || "default"}. When using get_appointments tool, pass this as elder_id.
 
 When using tools, always present the results naturally in your designated language. Don't show raw data — summarize it warmly.`;
 
@@ -461,7 +511,7 @@ When using tools, always present the results naturally in your designated langua
         const toolResults = [];
         for (const tool of toolBlocks) {
           console.log(`[chat] Tool call: ${tool.name}(${JSON.stringify(tool.input)})`);
-          const result = await executeTool(tool.name, tool.input, userCity);
+          const result = await executeTool(tool.name, tool.input, userCity, body.userId || "default");
           console.log(`[chat] Tool result: ${result.slice(0, 100)}...`);
           toolResults.push({
             type: "tool_result" as const,
@@ -522,7 +572,7 @@ When using tools, always present the results naturally in your designated langua
               max_tokens: 200,
               messages: [{
                 role: "user",
-                content: `다음 대화에서 일정/예약/약속 정보를 추출해줘. 있으면 JSON으로만 응답해: {"title":"제목","type":"hospital|adhc|pharmacy|other","location":"장소","scheduled_at":"ISO날짜또는설명"}
+                content: `오늘 날짜: ${today}. 다음 대화에서 일정/예약/약속 정보를 추출해줘. "내일"은 오늘+1일, "모레"는 오늘+2일로 계산해. 있으면 JSON으로만 응답해: {"title":"제목","type":"hospital|adhc|pharmacy|other","location":"장소","scheduled_at":"YYYY-MM-DDTHH:MM:SS"}
 없으면 null 로만 응답해.
 
 사용자: ${lastUserMsg}
