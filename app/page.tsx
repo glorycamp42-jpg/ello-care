@@ -6,6 +6,7 @@ import VoiceButton from "@/components/VoiceButton";
 import ImageButton from "@/components/ImageButton";
 import SpeakerButton from "@/components/SpeakerButton";
 import CharacterSelect, { PERSONAS, Persona, getPersonaText } from "@/components/CharacterSelect";
+import { createClient } from "@supabase/supabase-js";
 import { useTickets } from "@/components/useTickets";
 import TicketToast from "@/components/TicketToast";
 import TicketPage from "@/components/TicketPage";
@@ -70,6 +71,7 @@ export default function Home() {
   const [lastAssistantText, setLastAssistantText] = useState("");
   const [checkedIn, setCheckedIn] = useState(false);
   const [appointmentToast, setAppointmentToast] = useState(false);
+  const [userId, setUserId] = useState("default");
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -94,6 +96,20 @@ export default function Home() {
     // Load saved persona
     const saved = getSavedPersona();
     if (saved) { setPersona(saved); setShowSelect(false); }
+
+    // Get current user ID for appointment saving
+    try {
+      const sb = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      );
+      sb.auth.getUser().then(({ data }) => {
+        if (data.user?.id) {
+          setUserId(data.user.id);
+          console.log("[auth] User ID:", data.user.id);
+        }
+      });
+    } catch {}
 
     // Load saved location or request geolocation
     try {
@@ -332,6 +348,7 @@ export default function Home() {
     lang={lang || getSavedLang()}
     checkedIn={checkedIn} setCheckedIn={setCheckedIn}
     appointmentToast={appointmentToast} setAppointmentToast={setAppointmentToast}
+    userId={userId}
   />;
 }
 
@@ -361,6 +378,7 @@ interface ChatUIProps {
   lang: Language;
   checkedIn: boolean; setCheckedIn: (b: boolean) => void;
   appointmentToast: boolean; setAppointmentToast: (b: boolean) => void;
+  userId: string;
 }
 
 function ChatUI({
@@ -370,7 +388,7 @@ function ChatUI({
   lastAssistantText, setLastAssistantText,
   chatEndRef, recognitionRef, fileInputRef, messagesRef,
   playTTS, stopOrReplayTTS, createRecognition, onChangeCharacter,
-  tickets, onShowTickets, onShowReminders, onShowBible, onShowSafety, onChangeLang, userCity, lang, checkedIn, setCheckedIn, appointmentToast, setAppointmentToast,
+  tickets, onShowTickets, onShowReminders, onShowBible, onShowSafety, onChangeLang, userCity, lang, checkedIn, setCheckedIn, appointmentToast, setAppointmentToast, userId,
 }: ChatUIProps) {
 
   // Save parsed memories to Supabase
@@ -422,7 +440,7 @@ function ChatUI({
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: newMsgs, persona: persona.id, langPrompt: lang.systemPrompt, charName: lang.charName, userCity }),
+          body: JSON.stringify({ messages: newMsgs, persona: persona.id, langPrompt: lang.systemPrompt, charName: lang.charName, userCity, userId }),
         });
         console.log(`[chat-ui] Sent: lang=${lang.code}, charName=${lang.charName}, langPrompt="${lang.systemPrompt.slice(0, 50)}..."`);
         const data = await res.json();
