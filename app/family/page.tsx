@@ -22,7 +22,7 @@ interface LocationData {
 const supabase = createClient();
 
 export default function FamilyHome() {
-  const [elderName, setElderName] = useState("할머니");
+  const [elderName] = useState("할머니");
   const [elderId, setElderId] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(false);
   const [lastLocation, setLastLocation] = useState<LocationData | null>(null);
@@ -44,22 +44,11 @@ export default function FamilyHome() {
     }
     console.log("[family] familyId:", familyId);
 
-    // 2. Find linked elder via family_links
-    const { data: links } = await supabase
-      .from("family_links")
-      .select("elder_id, elder_name")
-      .eq("family_id", familyId)
-      .limit(1);
+    setElderId(familyId);
 
-    const link = links?.[0];
-    const eid = link?.elder_id || familyId; // fallback to self if no link
-    if (link?.elder_name) setElderName(link.elder_name);
-    setElderId(eid);
-    console.log("[family] elderId:", eid, "elderName:", link?.elder_name);
-
-    // 3. Fetch appointments from API (uses admin client server-side)
+    // 2. Fetch appointments — API resolves family→elder server-side
     try {
-      const res = await fetch(`/api/appointments?userId=${eid}`);
+      const res = await fetch(`/api/appointments?userId=${familyId}`);
       const data = await res.json();
       setAppointments(data.appointments || []);
       console.log("[family] appointments:", data.appointments?.length);
@@ -67,11 +56,11 @@ export default function FamilyHome() {
       console.error("[family] appointments fetch failed:", err);
     }
 
-    // 4. Fetch latest GPS location
+    // 3. Fetch latest GPS location (try familyId, GPS might be under elder's ID)
     const { data: locData } = await supabase
       .from("gps_locations")
       .select("*")
-      .eq("user_id", eid)
+      .eq("user_id", familyId)
       .order("created_at", { ascending: false })
       .limit(1);
 

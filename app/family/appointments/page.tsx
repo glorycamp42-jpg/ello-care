@@ -37,30 +37,23 @@ export default function AppointmentsPage() {
 
     async function init() {
       const { data: { session } } = await supabase.auth.getSession();
-      const familyId = session?.user?.id;
-      if (!familyId) { setLoading(false); return; }
+      const userId = session?.user?.id;
+      if (!userId) { setLoading(false); return; }
 
-      const { data: links } = await supabase
-        .from("family_links")
-        .select("elder_id")
-        .eq("family_id", familyId)
-        .limit(1);
-
-      const eid = links?.[0]?.elder_id || familyId;
-      await fetchAppointments(eid);
+      // API resolves family→elder lookup server-side
+      await fetchAppointments(userId);
       setLoading(false);
 
-      // Realtime subscription
+      // Realtime subscription for any appointment changes
       channel = supabase
         .channel("appointments-realtime")
         .on("postgres_changes", {
           event: "INSERT",
           schema: "public",
           table: "appointments",
-          filter: `elder_id=eq.${eid}`,
         }, () => {
           console.log("[family-appointments] Realtime: new appointment detected");
-          fetchAppointments(eid);
+          fetchAppointments(userId);
         })
         .subscribe();
     }
