@@ -1,36 +1,31 @@
-import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { createMiddlewareSupabase } from "@/lib/supabase/middleware";
 
-const PUBLIC = ['/login', '/family/login', '/auth/callback', '/api/', '/_next/', '/favicon.ico', '/manifest', '/icon', '/icons/', '/characters/', '/animations/']
+const PUBLIC = ["/login", "/family/login", "/auth/callback", "/api/", "/_next/", "/favicon.ico", "/manifest", "/icon", "/icons/", "/characters/", "/animations/"];
 
-export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
 
-  // Allow public routes
   if (PUBLIC.some((p) => pathname.startsWith(p))) {
-    return NextResponse.next()
+    return NextResponse.next();
   }
 
-  // Check for Supabase auth cookie
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  if (!url) return NextResponse.next() // dev without supabase
+  const { supabase, response } = createMiddlewareSupabase(request);
 
-  const projectId = new URL(url).hostname.split('.')[0]
-  const hasSession = request.cookies.getAll().some(
-    (c) => c.name.startsWith(`sb-${projectId}-auth`)
-  )
+  // This refreshes the session cookie if needed
+  const { data: { user } } = await supabase.auth.getUser();
 
-  if (hasSession) {
-    return NextResponse.next()
+  if (!user) {
+    if (pathname.startsWith("/family")) {
+      return NextResponse.redirect(new URL("/family/login", request.url));
+    }
+    return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Not logged in → redirect to login
-  if (pathname.startsWith('/family')) {
-    return NextResponse.redirect(new URL('/family/login', request.url))
-  }
-  return NextResponse.redirect(new URL('/login', request.url))
+  return response;
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.png$|.*\\.svg$|.*\\.json$).*)'],
-}
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.png$|.*\\.svg$|.*\\.json$).*)"],
+};

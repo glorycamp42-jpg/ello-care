@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 
 export async function GET(req: NextRequest) {
@@ -10,12 +11,27 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(`${origin}/login`);
   }
 
-  const supabase = createClient(
+  // Create SSR client that can set cookies on the response
+  const response = NextResponse.redirect(`${origin}/`);
+
+  const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return req.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options);
+          });
+        },
+      },
+    }
   );
 
-  // Exchange code for session
+  // Exchange code for session — this sets the auth cookies
   const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error || !data.session) {
@@ -25,10 +41,8 @@ export async function GET(req: NextRequest) {
 
   // Check role for redirect
   const userId = data.session.user.id;
-  const userRole = data.session.user.user_metadata?.role;
+  let role = data.session.user.user_metadata?.role;
 
-  // Also check users table
-  let role = userRole;
   try {
     const admin = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -45,10 +59,9 @@ export async function GET(req: NextRequest) {
 
   console.log(`[auth/callback] User: ${data.session.user.email}, role: ${role}`);
 
-  // Set session cookie via response
-  const response = NextResponse.redirect(
-    role === "family" ? `${origin}/family` : `${origin}/`
-  );
+  // Redirect based on role (cookies already set on response)
+  const redirectUrl = role === "family" ? `${origin}/family` : `${origin}/`;
+  response.headers.set("Location", redirectUrl);
 
   return response;
 }

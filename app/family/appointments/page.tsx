@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/client";
 
 interface Appointment {
   id: string;
@@ -20,10 +20,7 @@ const TYPE_CONFIG: Record<string, { bg: string; text: string; label: string; ico
   other: { bg: "bg-gray-100", text: "text-gray-500", label: "기타", iconBg: "bg-gray-50" },
 };
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+const supabase = createClient();
 
 export default function AppointmentsPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);

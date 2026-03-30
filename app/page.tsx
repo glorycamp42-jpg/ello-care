@@ -6,7 +6,7 @@ import VoiceButton from "@/components/VoiceButton";
 import ImageButton from "@/components/ImageButton";
 import SpeakerButton from "@/components/SpeakerButton";
 import CharacterSelect, { PERSONAS, Persona, getPersonaText } from "@/components/CharacterSelect";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/client";
 import { useTickets } from "@/components/useTickets";
 import TicketToast from "@/components/TicketToast";
 import TicketPage from "@/components/TicketPage";
@@ -99,10 +99,7 @@ export default function Home() {
 
     // Get current user ID for appointment saving
     try {
-      const sb = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      );
+      const sb = createClient();
       sb.auth.getSession().then(({ data: { session } }) => {
         if (session?.user?.id) {
           setUserId(session.user.id);
