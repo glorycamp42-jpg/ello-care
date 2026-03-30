@@ -26,13 +26,12 @@ export default function FamilyLayout({ children }: { children: React.ReactNode }
 
     // Swap apple-touch-icon
     const existingIcon = document.querySelector('link[rel="apple-touch-icon"]');
-    if (existingIcon) existingIcon.setAttribute("href", "/icon-family.svg");
+    if (existingIcon) existingIcon.setAttribute("href", "/icons/icon-family-192.png");
 
     return () => {
-      // Restore on unmount
       if (existingManifest) existingManifest.setAttribute("href", "/manifest.json");
       if (existingTheme) existingTheme.setAttribute("content", "#1B6FE8");
-      if (existingIcon) existingIcon.setAttribute("href", "/icon-192x192.png");
+      if (existingIcon) existingIcon.setAttribute("href", "/icons/icon-192.png");
     };
   }, []);
 
