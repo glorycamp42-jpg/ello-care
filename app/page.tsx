@@ -108,7 +108,8 @@ export default function Home() {
           setUserId(session.user.id);
           console.log("[auth] User ID from session:", session.user.id);
         } else {
-          console.log("[auth] No session found, userId stays 'default'");
+          console.log("[auth] No session, redirecting to /login");
+          window.location.href = "/login";
         }
       });
     } catch (err) {
