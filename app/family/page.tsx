@@ -1,25 +1,89 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getElderLocation, getAppointments, ElderLocation, Appointment } from "@/lib/family-db";
+import { createClient } from "@supabase/supabase-js";
 
-const ELDER_ID = "default";
+interface Appointment {
+  id: string;
+  title: string;
+  type: string;
+  location: string;
+  scheduled_at: string;
+  notes: string;
+}
+
+interface LocationData {
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  created_at: string;
+}
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export default function FamilyHome() {
-  const [elderName] = useState("할머니");
+  const [elderName, setElderName] = useState("할머니");
+  const [elderId, setElderId] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(false);
-  const [lastLocation, setLastLocation] = useState<ElderLocation | null>(null);
+  const [lastLocation, setLastLocation] = useState<LocationData | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    init();
+  }, []);
 
-  async function loadData() {
-    const loc = await getElderLocation(ELDER_ID);
-    if (loc) {
-      setLastLocation(loc);
-      setIsOnline(Date.now() - new Date(loc.created_at).getTime() < 15 * 60 * 1000);
+  async function init() {
+    // 1. Get current family user
+    const { data: { session } } = await supabase.auth.getSession();
+    const familyId = session?.user?.id;
+    if (!familyId) {
+      console.log("[family] No session");
+      setLoading(false);
+      return;
     }
-    setAppointments(await getAppointments(ELDER_ID));
+    console.log("[family] familyId:", familyId);
+
+    // 2. Find linked elder via family_links
+    const { data: links } = await supabase
+      .from("family_links")
+      .select("elder_id, elder_name")
+      .eq("family_id", familyId)
+      .limit(1);
+
+    const link = links?.[0];
+    const eid = link?.elder_id || familyId; // fallback to self if no link
+    if (link?.elder_name) setElderName(link.elder_name);
+    setElderId(eid);
+    console.log("[family] elderId:", eid, "elderName:", link?.elder_name);
+
+    // 3. Fetch appointments from API (uses admin client server-side)
+    try {
+      const res = await fetch(`/api/appointments?userId=${eid}`);
+      const data = await res.json();
+      setAppointments(data.appointments || []);
+      console.log("[family] appointments:", data.appointments?.length);
+    } catch (err) {
+      console.error("[family] appointments fetch failed:", err);
+    }
+
+    // 4. Fetch latest GPS location
+    const { data: locData } = await supabase
+      .from("gps_locations")
+      .select("*")
+      .eq("user_id", eid)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (locData?.[0]) {
+      setLastLocation(locData[0]);
+      setIsOnline(Date.now() - new Date(locData[0].created_at).getTime() < 15 * 60 * 1000);
+    }
+
+    setLoading(false);
   }
 
   function timeAgo(iso: string): string {
@@ -31,11 +95,34 @@ export default function FamilyHome() {
     return `${Math.floor(h / 24)}일 전`;
   }
 
+  function formatDate(iso: string): string {
+    try {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return iso;
+      return d.toLocaleDateString("ko-KR", { month: "short", day: "numeric", weekday: "short" });
+    } catch { return iso; }
+  }
+
+  function formatTime(iso: string): string {
+    try {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return "";
+      return d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+    } catch { return ""; }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-dvh bg-[#F0F7FF]">
+        <p className="text-gray-400">불러오는 중...</p>
+      </div>
+    );
+  }
+
   return (
     <div>
       {/* ── Blue header ── */}
       <div className="bg-gradient-to-br from-[#1B6FE8] to-[#3D8BF2] rounded-b-[28px] px-5 pt-8 pb-7">
-        {/* Top row */}
         <div className="flex items-center justify-between mb-5">
           <div>
             <p className="text-blue-200 text-xs font-medium">Ello Family</p>
@@ -58,9 +145,7 @@ export default function FamilyHome() {
             <div className="flex items-center gap-2">
               <h2 className="text-white font-bold text-lg">{elderName}</h2>
               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                isOnline
-                  ? "bg-green-400/30 text-green-200"
-                  : "bg-white/15 text-white/60"
+                isOnline ? "bg-green-400/30 text-green-200" : "bg-white/15 text-white/60"
               }`}>
                 {isOnline ? "● 온라인" : "○ 오프라인"}
               </span>
@@ -80,7 +165,7 @@ export default function FamilyHome() {
           <div className="bg-white rounded-xl shadow-sm p-4">
             <div className="flex items-center gap-2 mb-2">
               <span className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-base">📅</span>
-              <span className="text-gray-400 text-xs">이번주 일정</span>
+              <span className="text-gray-400 text-xs">일정</span>
             </div>
             <p className="text-2xl font-bold text-gray-900">{appointments.length}<span className="text-sm font-normal text-gray-400 ml-1">건</span></p>
           </div>
@@ -93,7 +178,7 @@ export default function FamilyHome() {
           </div>
         </div>
 
-        {/* Last location card */}
+        {/* Last location */}
         <div className="bg-white rounded-xl shadow-sm p-4 mb-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
@@ -109,26 +194,25 @@ export default function FamilyHome() {
           {lastLocation ? (
             <div className="bg-[#F0F7FF] rounded-lg p-3 font-mono text-sm text-gray-600">
               {lastLocation.latitude.toFixed(5)}, {lastLocation.longitude.toFixed(5)}
-              {lastLocation.accuracy && (
-                <span className="text-xs text-gray-400 ml-2">±{Math.round(lastLocation.accuracy)}m</span>
-              )}
+              {lastLocation.accuracy && <span className="text-xs text-gray-400 ml-2">±{Math.round(lastLocation.accuracy)}m</span>}
             </div>
           ) : (
             <p className="text-sm text-gray-400">위치 데이터가 아직 없습니다</p>
           )}
         </div>
 
-        {/* Upcoming appointments card */}
+        {/* ── Appointments from DB ── */}
         <div className="bg-white rounded-xl shadow-sm p-4 mb-4">
           <div className="flex items-center gap-2 mb-3">
             <span className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center text-base">🏥</span>
-            <h3 className="font-bold text-sm text-gray-900">다가오는 일정</h3>
+            <h3 className="font-bold text-sm text-gray-900">어르신 일정</h3>
+            {elderId && <span className="text-[10px] text-gray-300 ml-auto">DB 연동</span>}
           </div>
           {appointments.length === 0 ? (
             <p className="text-sm text-gray-400 text-center py-4">등록된 일정이 없습니다</p>
           ) : (
             <div className="space-y-2">
-              {appointments.slice(0, 3).map((a) => (
+              {appointments.map((a) => (
                 <div key={a.id} className="flex items-center gap-3 bg-[#F0F7FF] rounded-xl px-3 py-2.5">
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
                     a.type === "hospital" ? "bg-red-100 text-red-600" :
@@ -136,10 +220,16 @@ export default function FamilyHome() {
                     a.type === "pharmacy" ? "bg-green-100 text-green-600" :
                     "bg-gray-100 text-gray-500"
                   }`}>
-                    {a.type === "hospital" ? "병원" : a.type === "adhc" ? "ADHC" : a.type === "pharmacy" ? "약국" : "기타"}
+                    {a.type === "hospital" ? "병원" : a.type === "adhc" ? "ADHC" : a.type === "pharmacy" ? "약국" : "일정"}
                   </span>
-                  <span className="text-sm text-gray-700 truncate flex-1">{a.title}</span>
-                  <span className="text-[11px] text-gray-400 shrink-0">{a.date}</span>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm text-gray-700 block truncate">{a.title}</span>
+                    {a.location && <span className="text-[11px] text-gray-400">📍 {a.location}</span>}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="text-[11px] text-[#1B6FE8] font-medium block">{formatDate(a.scheduled_at)}</span>
+                    <span className="text-[10px] text-gray-400">{formatTime(a.scheduled_at)}</span>
+                  </div>
                 </div>
               ))}
             </div>
