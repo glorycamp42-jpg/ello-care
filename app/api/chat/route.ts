@@ -320,8 +320,10 @@ async function saveAppointments(appointments: ParsedAppointment[], elderId: stri
       notes: apt.notes || "",
       source: "ello_ai",
     };
+    console.log("[appointment] elder_id being used:", elderId);
     console.log("[appointment] Inserting row:", JSON.stringify(row));
     const { data, error } = await supabase.from("appointments").insert(row).select();
+    console.log("[appointment] insert result:", JSON.stringify({ data, error }));
     if (error) {
       console.error("[appointment] INSERT ERROR:", JSON.stringify(error));
       console.error("[appointment] error.message:", error.message);
@@ -483,7 +485,7 @@ When using tools, always present the results naturally in your designated langua
     const lastUserMsg = messages[messages.length - 1]?.content || "";
 
     console.log(`[chat] ===== APPOINTMENT TRACKING =====`);
-    console.log(`[chat] userId: ${elderId}`);
+    console.log(`[chat] received userId: "${body.userId}" → elderId: "${elderId}"`);
     console.log(`[chat] 메시지: ${lastUserMsg.slice(0, 100)}`);
     console.log(`[chat] Raw response: ${rawText.slice(0, 300)}`);
 
