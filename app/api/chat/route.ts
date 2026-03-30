@@ -317,10 +317,9 @@ async function saveAppointments(appointments: ParsedAppointment[], elderId: stri
     const row = {
       elder_id: elderId,
       title: apt.title,
-      type: apt.type || "other",
-      date: apt.scheduled_at?.split("T")[0] || apt.scheduled_at || "",
-      time: apt.scheduled_at?.includes("T") ? apt.scheduled_at.split("T")[1]?.replace(":00", "") || "" : "",
+      type: apt.type || "general",
       location: apt.location || "",
+      scheduled_at: apt.scheduled_at || `${apt.date || ""}T${apt.time || "00:00"}:00`,
       notes: apt.notes || "",
       source: "ello_ai",
     };
