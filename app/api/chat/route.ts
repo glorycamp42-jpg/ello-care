@@ -444,13 +444,68 @@ When using tools, always present the results naturally in your designated langua
     }
 
     const rawText = finalText.trim() || "Sorry, something went wrong.";
+    console.log(`[chat] Raw response: ${rawText.slice(0, 300)}...`);
 
-    // Parse and save appointments
+    // Parse inline [APPOINTMENT] blocks if present
     const { cleanText, appointments } = parseAppointments(rawText);
     const elderId = body.userId || "default";
+
     if (appointments.length > 0) {
-      console.log(`[chat] Found ${appointments.length} appointment(s), saving for elder=${elderId}`);
+      console.log(`[chat] Found ${appointments.length} inline appointment(s)`);
       await saveAppointments(appointments, elderId);
+    } else {
+      // Fallback: separate extraction call if user mentioned schedule-related keywords
+      const lastUserMsg = messages[messages.length - 1]?.content || "";
+      const hasScheduleKeywords = /병원|약국|ADHC|진료|예약|방문|약속|appointment|doctor|pharmacy|시에|시 에|월.*일/i.test(lastUserMsg + " " + rawText);
+
+      if (hasScheduleKeywords) {
+        console.log("[chat] Schedule keywords detected, running extraction call...");
+        try {
+          const extractRes = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": apiKey,
+              "anthropic-version": "2023-06-01",
+            },
+            body: JSON.stringify({
+              model: "claude-sonnet-4-20250514",
+              max_tokens: 200,
+              messages: [{
+                role: "user",
+                content: `다음 대화에서 일정/예약/약속 정보를 추출해줘. 있으면 JSON으로만 응답해: {"title":"제목","type":"hospital|adhc|pharmacy|other","location":"장소","scheduled_at":"ISO날짜또는설명"}
+없으면 null 로만 응답해.
+
+사용자: ${lastUserMsg}
+AI응답: ${rawText}`,
+              }],
+            }),
+          });
+
+          if (extractRes.ok) {
+            const extractData = await extractRes.json();
+            const extractText = extractData.content?.[0]?.text?.trim() || "";
+            console.log(`[chat] Extraction result: ${extractText}`);
+
+            if (extractText && extractText !== "null") {
+              try {
+                const apt = JSON.parse(extractText);
+                if (apt && apt.title) {
+                  console.log(`[chat] Extracted appointment: ${apt.title}`);
+                  await saveAppointments([apt], elderId);
+                  const text = cleanText || rawText;
+                  console.log(`[chat] Final response (${text.length} chars), appointments=1 (extracted)`);
+                  return NextResponse.json({ text, appointmentSaved: true });
+                }
+              } catch {
+                console.log("[chat] Extraction JSON parse failed, skipping");
+              }
+            }
+          }
+        } catch (err) {
+          console.error("[chat] Extraction call failed:", err);
+        }
+      }
     }
 
     const text = cleanText || rawText;
