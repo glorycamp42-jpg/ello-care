@@ -18,17 +18,23 @@ export function getSupabase(): SupabaseClient | null {
 
 export async function signInWithEmail(email: string, password: string) {
   const sb = getSupabase();
-  if (!sb) throw new Error("Supabase not configured");
+  if (!sb) {
+    console.error("[supabase] Client is null — env vars missing?");
+    throw new Error("Supabase가 설정되지 않았습니다. 환경변수를 확인하세요.");
+  }
+  console.log("[supabase] signInWithPassword called for:", email);
   const { data, error } = await sb.auth.signInWithPassword({ email, password });
   if (error) {
+    console.error("[supabase] Auth error:", error.message, error);
     if (error.message?.includes("Email not confirmed")) {
-      throw new Error("이메일 인증이 필요합니다. Supabase 대시보드에서 이메일 인증을 비활성화하거나, 관리자에게 문의하세요.");
+      throw new Error("이메일 인증이 필요합니다. 관리자에게 문의하세요.");
     }
     if (error.message?.includes("Invalid login credentials")) {
       throw new Error("이메일 또는 비밀번호가 올바르지 않습니다.");
     }
-    throw error;
+    throw new Error(error.message);
   }
+  console.log("[supabase] Login success, user:", data.user?.email, "role:", data.user?.user_metadata?.role);
   return data;
 }
 
