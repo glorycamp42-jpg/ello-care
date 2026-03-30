@@ -1,18 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabase } from "@/lib/supabase";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-/* ── Supabase Admin Client (bypasses RLS) ── */
-function getSupabaseAdmin() {
+/* ── Supabase Admin Client (service role key, bypasses RLS) ── */
+let _supabaseAdmin: SupabaseClient | null = null;
+
+function getSupabaseAdmin(): SupabaseClient | null {
+  if (_supabaseAdmin) return _supabaseAdmin;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
-    console.warn("[supabase-admin] Service role key not set, falling back to anon client");
-    return getSupabase();
+    console.error("[supabase-admin] MISSING: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+    return null;
   }
-  return createClient(url, key, {
+  console.log("[supabase-admin] Creating admin client with service role key");
+  _supabaseAdmin = createClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+  return _supabaseAdmin;
 }
 
 /* ── Language-neutral base prompt ── */
