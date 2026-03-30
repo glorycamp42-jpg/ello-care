@@ -1,37 +1,48 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { signInWithEmail, signInWithGoogle } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
 import Link from "next/link";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export default function FamilyLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
 
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleLogin() {
     setError("");
     setLoading(true);
-    try {
-      await signInWithEmail(email, password);
-      router.push("/family");
-    } catch (err: unknown) {
-      setError((err as Error).message || "Login failed");
-    } finally {
-      setLoading(false);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) { setError(error.message); setLoading(false); return; }
+
+    // Lookup role from users table
+    const { data: userData } = await supabase
+      .from("users")
+      .select("role")
+      .eq("id", data.user.id)
+      .single();
+
+    const role = userData?.role || data.user.user_metadata?.role || "family";
+
+    if (role === "elder") {
+      window.location.href = "/";
+    } else {
+      window.location.href = "/family";
     }
   }
 
   async function handleGoogle() {
-    try {
-      await signInWithGoogle(window.location.origin + "/family");
-    } catch (err: unknown) {
-      setError((err as Error).message || "Google login failed");
-    }
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin + "/family" },
+    });
+    if (error) setError(error.message);
   }
 
   return (
@@ -45,27 +56,27 @@ export default function FamilyLogin() {
           <p className="text-gray-500 text-sm mt-1">가족 돌봄 대시보드</p>
         </div>
 
-        <form onSubmit={handleLogin} className="space-y-3">
+        <div className="space-y-3">
           <div>
             <label className="block text-gray-600 text-sm font-medium mb-1.5">이메일</label>
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-              placeholder="email@example.com" required
+              placeholder="email@example.com"
               className="w-full px-4 py-3 bg-white rounded-xl border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-[#1B6FE8] focus:ring-2 focus:ring-[#1B6FE8]/20" />
           </div>
           <div>
             <label className="block text-gray-600 text-sm font-medium mb-1.5">비밀번호</label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-              placeholder="비밀번호" required
+              placeholder="비밀번호"
               className="w-full px-4 py-3 bg-white rounded-xl border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-[#1B6FE8] focus:ring-2 focus:ring-[#1B6FE8]/20" />
           </div>
 
           {error && <p className="text-red-500 text-xs text-center bg-red-50 rounded-lg py-2">{error}</p>}
 
-          <button type="submit" disabled={loading}
+          <button type="button" onClick={handleLogin} disabled={loading}
             className="w-full py-3 bg-[#1B6FE8] text-white rounded-xl text-sm font-bold shadow-md shadow-[#1B6FE8]/25 hover:bg-[#1558C0] active:scale-[0.98] transition-all disabled:opacity-50">
             {loading ? "로그인 중..." : "로그인"}
           </button>
-        </form>
+        </div>
 
         <div className="flex items-center gap-3 my-4">
           <div className="flex-1 h-px bg-gray-200" /><span className="text-gray-400 text-xs">또는</span><div className="flex-1 h-px bg-gray-200" />

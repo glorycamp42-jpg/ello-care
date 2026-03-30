@@ -18,9 +18,23 @@ export default function LoginPage() {
   async function handleLogin() {
     setError('')
     setLoading(true)
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) { setError(error.message); setLoading(false); return }
-    window.location.href = '/'
+
+    // Lookup role from users table
+    const { data: userData } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', data.user.id)
+      .single()
+
+    const role = userData?.role || data.user.user_metadata?.role || 'elder'
+
+    if (role === 'family') {
+      window.location.href = '/family'
+    } else {
+      window.location.href = '/'
+    }
   }
 
   return (
