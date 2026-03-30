@@ -1,5 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
+
+/* ── Supabase Admin Client (bypasses RLS) ── */
+function getSupabaseAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    console.warn("[supabase-admin] Service role key not set, falling back to anon client");
+    return getSupabase();
+  }
+  return createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
 
 /* ── Language-neutral base prompt ── */
 const BASE_RULES = `You are a warm, caring AI companion for elderly users.
@@ -148,7 +162,7 @@ async function executeSearchNews(query: string, language: string = "ko"): Promis
 }
 
 async function executeSetReminder(date: string, time: string, content: string): Promise<string> {
-  const supabase = getSupabase();
+  const supabase = getSupabaseAdmin();
   if (supabase) {
     try {
       await supabase.from("memories").insert({
@@ -282,11 +296,12 @@ function parseAppointments(text: string): { cleanText: string; appointments: Par
 }
 
 async function saveAppointments(appointments: ParsedAppointment[], elderId: string) {
-  const supabase = getSupabase();
-  if (!supabase || appointments.length === 0) return;
+  const supabase = getSupabaseAdmin();
+  if (!supabase) { console.error("[appointment] Supabase admin client is null!"); return; }
+  if (appointments.length === 0) return;
 
   for (const apt of appointments) {
-    const { error } = await supabase.from("appointments").insert({
+    const row = {
       elder_id: elderId,
       title: apt.title,
       type: apt.type || "other",
@@ -295,11 +310,13 @@ async function saveAppointments(appointments: ParsedAppointment[], elderId: stri
       location: apt.location || "",
       notes: apt.notes || "",
       source: "ello_ai",
-    });
+    };
+    console.log("[appointment] Inserting row:", JSON.stringify(row));
+    const { data, error } = await supabase.from("appointments").insert(row).select();
     if (error) {
-      console.error("[appointment] Insert error:", error.message);
+      console.error("[appointment] DB INSERT error:", error.message, error.details, error.hint);
     } else {
-      console.log(`[appointment] Saved: ${apt.title} (${apt.type}) at ${apt.scheduled_at}`);
+      console.log(`[appointment] DB 저장 성공: id=${data?.[0]?.id}, title=${apt.title}`);
     }
   }
 }
@@ -444,22 +461,29 @@ When using tools, always present the results naturally in your designated langua
     }
 
     const rawText = finalText.trim() || "Sorry, something went wrong.";
-    console.log(`[chat] Raw response: ${rawText.slice(0, 300)}...`);
+    const elderId = body.userId || "default";
+    const lastUserMsg = messages[messages.length - 1]?.content || "";
+
+    console.log(`[chat] ===== APPOINTMENT TRACKING =====`);
+    console.log(`[chat] userId: ${elderId}`);
+    console.log(`[chat] 메시지: ${lastUserMsg.slice(0, 100)}`);
+    console.log(`[chat] Raw response: ${rawText.slice(0, 300)}`);
 
     // Parse inline [APPOINTMENT] blocks if present
     const { cleanText, appointments } = parseAppointments(rawText);
-    const elderId = body.userId || "default";
+    console.log(`[chat] Inline [APPOINTMENT] blocks found: ${appointments.length}`);
 
     if (appointments.length > 0) {
-      console.log(`[chat] Found ${appointments.length} inline appointment(s)`);
+      console.log(`[chat] Saving ${appointments.length} inline appointment(s)...`);
       await saveAppointments(appointments, elderId);
+      console.log(`[chat] DB 저장 완료 (inline)`);
     } else {
       // Fallback: separate extraction call if user mentioned schedule-related keywords
-      const lastUserMsg = messages[messages.length - 1]?.content || "";
       const hasScheduleKeywords = /병원|약국|ADHC|진료|예약|방문|약속|appointment|doctor|pharmacy|시에|시 에|월.*일/i.test(lastUserMsg + " " + rawText);
+      console.log(`[chat] 키워드 감지: ${hasScheduleKeywords}`);
 
       if (hasScheduleKeywords) {
-        console.log("[chat] Schedule keywords detected, running extraction call...");
+        console.log("[chat] Running extraction call...");
         try {
           const extractRes = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
@@ -485,14 +509,16 @@ AI응답: ${rawText}`,
           if (extractRes.ok) {
             const extractData = await extractRes.json();
             const extractText = extractData.content?.[0]?.text?.trim() || "";
-            console.log(`[chat] Extraction result: ${extractText}`);
+            console.log(`[chat] 추출 결과: ${extractText}`);
 
             if (extractText && extractText !== "null") {
               try {
                 const apt = JSON.parse(extractText);
+                console.log(`[chat] 파싱된 JSON:`, JSON.stringify(apt));
                 if (apt && apt.title) {
-                  console.log(`[chat] Extracted appointment: ${apt.title}`);
+                  console.log(`[chat] Saving extracted appointment: ${apt.title} (${apt.type})`);
                   await saveAppointments([apt], elderId);
+                  console.log(`[chat] DB 저장 완료 (extracted)`);
                   const text = cleanText || rawText;
                   console.log(`[chat] Final response (${text.length} chars), appointments=1 (extracted)`);
                   return NextResponse.json({ text, appointmentSaved: true });
