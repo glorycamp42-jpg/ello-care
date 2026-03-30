@@ -1,0 +1,30 @@
+{
+  "name": "Ello Family",
+  "short_name": "Ello Family",
+  "description": "어르신 돌봄 가족 대시보드",
+  "start_url": "/family",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F0F7FF",
+  "theme_color": "#1B6FE8",
+  "icons": [
+    {
+      "src": "/icon-family.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

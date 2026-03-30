@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import { useEffect } from "react";
 import Link from "next/link";
 
 const TABS = [
@@ -12,6 +13,28 @@ const TABS = [
 
 export default function FamilyLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+
+  // Override manifest + theme-color for Family PWA
+  useEffect(() => {
+    // Swap manifest
+    const existingManifest = document.querySelector('link[rel="manifest"]');
+    if (existingManifest) existingManifest.setAttribute("href", "/manifest-family.json");
+
+    // Swap theme-color
+    const existingTheme = document.querySelector('meta[name="theme-color"]');
+    if (existingTheme) existingTheme.setAttribute("content", "#1B6FE8");
+
+    // Swap apple-touch-icon
+    const existingIcon = document.querySelector('link[rel="apple-touch-icon"]');
+    if (existingIcon) existingIcon.setAttribute("href", "/icon-family.svg");
+
+    return () => {
+      // Restore on unmount
+      if (existingManifest) existingManifest.setAttribute("href", "/manifest.json");
+      if (existingTheme) existingTheme.setAttribute("content", "#1B6FE8");
+      if (existingIcon) existingIcon.setAttribute("href", "/icon-192x192.png");
+    };
+  }, []);
 
   return (
     <div className="flex flex-col h-dvh max-w-md mx-auto bg-[#F0F7FF] relative">
