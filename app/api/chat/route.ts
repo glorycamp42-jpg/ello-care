@@ -500,41 +500,38 @@ function parseAppointments(text: string): { cleanText: string; appointments: Par
 }
 
 // Normalize scheduled_at: fix Korean time expressions and ensure LA timezone
+// Store LA local time as-is — NO UTC conversion
 function normalizeScheduledAt(raw: string | undefined): string {
-  if (!raw) return new Date().toISOString();
+  const laDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+
+  if (!raw) return `${laDate}T09:00:00`;
 
   let s = raw;
 
-  // If it's a Korean time expression mixed in, parse it
-  // 오전 N시 → N:00, 오후 N시 → N+12:00
-  s = s.replace(/오전\s*(\d{1,2})시/g, (_, h) => {
-    const hour = parseInt(h);
-    return `${String(hour).padStart(2, "0")}:00:00`;
-  });
+  // Replace Korean time expressions with 24h format
+  s = s.replace(/오전\s*(\d{1,2})시/g, (_, h) => `${String(parseInt(h)).padStart(2, "0")}:00:00`);
   s = s.replace(/오후\s*(\d{1,2})시/g, (_, h) => {
-    const hour = parseInt(h);
-    const h24 = hour === 12 ? 12 : hour + 12;
-    return `${String(h24).padStart(2, "0")}:00:00`;
+    const hr = parseInt(h);
+    return `${String(hr === 12 ? 12 : hr + 12).padStart(2, "0")}:00:00`;
   });
   s = s.replace(/저녁\s*(\d{1,2})시/g, (_, h) => {
-    const hour = parseInt(h);
-    const h24 = hour === 12 ? 12 : hour + 12;
-    return `${String(h24).padStart(2, "0")}:00:00`;
+    const hr = parseInt(h);
+    return `${String(hr === 12 ? 12 : hr + 12).padStart(2, "0")}:00:00`;
   });
 
-  // If it looks like a valid ISO date, use it
-  const d = new Date(s);
-  if (!isNaN(d.getTime())) {
-    // Ensure it has time component
-    if (!s.includes("T")) {
-      return s + "T09:00:00";
-    }
-    return d.toISOString();
+  // If already has T and looks like ISO, return as-is (no .toISOString() which converts to UTC)
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) {
+    console.log(`[appointment] Storing as-is: ${s}`);
+    return s;
   }
 
-  // Fallback: today's date at 9am LA time
-  const laDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-  console.log(`[appointment] Could not parse "${raw}", using fallback: ${laDate}T09:00:00`);
+  // Date without time → add default 09:00
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return `${s}T09:00:00`;
+  }
+
+  // Fallback
+  console.log(`[appointment] Could not parse "${raw}", fallback: ${laDate}T09:00:00`);
   return `${laDate}T09:00:00`;
 }
 
