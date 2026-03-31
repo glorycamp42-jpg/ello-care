@@ -186,42 +186,56 @@ const TOOLS = [
 
 /* ── Tool Execution Functions ── */
 
+// WMO Weather Code → Korean description
+const WEATHER_CODES: Record<number, string> = {
+  0: "맑음", 1: "대체로 맑음", 2: "구름 조금", 3: "흐림",
+  45: "안개", 48: "짙은 안개",
+  51: "가벼운 이슬비", 53: "이슬비", 55: "짙은 이슬비",
+  61: "가벼운 비", 63: "비", 65: "폭우", 66: "얼어붙는 비", 67: "강한 얼어붙는 비",
+  71: "가벼운 눈", 73: "눈", 75: "폭설", 77: "싸락눈",
+  80: "소나기", 81: "강한 소나기", 82: "매우 강한 소나기",
+  85: "가벼운 눈보라", 86: "눈보라",
+  95: "천둥번개", 96: "우박 동반 천둥번개", 99: "강한 우박 천둥번개",
+};
+
 async function executeGetWeather(city: string): Promise<string> {
   try {
-    const queryCity = city || "Los Angeles";
-    const res = await fetch(`https://wttr.in/${encodeURIComponent(queryCity)}?format=j1`, {
-      headers: { "User-Agent": "ElloCare/1.0" },
-    });
-    if (!res.ok) return `Could not fetch weather for ${queryCity}.`;
+    // LA Koreatown coordinates (default), can expand later
+    const lat = 34.0628;
+    const lon = -118.3015;
+    const location = city || "LA 코리아타운";
+
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,weathercode,relative_humidity_2m,wind_speed_10m&temperature_unit=fahrenheit&wind_speed_unit=mph`;
+    const res = await fetch(url);
+    if (!res.ok) return `Could not fetch weather.`;
     const data = await res.json();
-    const current = data.current_condition?.[0];
-    if (!current) return `No weather data available for ${queryCity}.`;
+    const c = data.current;
+    if (!c) return `No weather data available.`;
 
-    const tempF = current.temp_F;
-    const tempC = current.temp_C;
-    const feelsF = current.FeelsLikeF;
-    const feelsC = current.FeelsLikeC;
-    const condition = current.weatherDesc?.[0]?.value || "Unknown";
-    const humidity = current.humidity;
-    const windMph = current.windspeedMiles;
+    const tempF = Math.round(c.temperature_2m);
+    const tempC = Math.round((c.temperature_2m - 32) * 5 / 9);
+    const feelsF = Math.round(c.apparent_temperature);
+    const feelsC = Math.round((c.apparent_temperature - 32) * 5 / 9);
+    const weatherCode = c.weathercode as number;
+    const condition = WEATHER_CODES[weatherCode] || "알 수 없음";
+    const humidity = c.relative_humidity_2m;
+    const windMph = Math.round(c.wind_speed_10m);
 
-    // Determine activity suggestion based on conditions
     let suggestion = "";
-    const tempNum = parseInt(tempF);
-    if (condition.toLowerCase().includes("rain") || condition.toLowerCase().includes("snow")) {
+    if (weatherCode >= 51) {
       suggestion = "우산을 챙기세요! 외출 시 조심하세요.";
-    } else if (tempNum > 85) {
+    } else if (tempF > 85) {
       suggestion = "더운 날이에요. 물 많이 드시고 그늘에서 쉬세요.";
-    } else if (tempNum < 50) {
+    } else if (tempF < 50) {
       suggestion = "쌀쌀해요. 따뜻하게 입고 나가세요.";
-    } else if (tempNum >= 65 && tempNum <= 80) {
+    } else if (tempF >= 65 && tempF <= 80) {
       suggestion = "나들이 하기 좋은 날씨네요!";
     } else {
       suggestion = "건강 조심하세요!";
     }
 
     return JSON.stringify({
-      city: queryCity,
+      location,
       temperature_F: tempF,
       temperature_C: tempC,
       feelslike_F: feelsF,
@@ -230,11 +244,11 @@ async function executeGetWeather(city: string): Promise<string> {
       humidity_percent: humidity,
       wind_mph: windMph,
       suggestion,
-      instruction: `Present the weather naturally. Include both °F and °C. Example format: "오늘 ${queryCity} 날씨는 ${condition}이고 ${tempF}°F (${tempC}°C)예요. ${suggestion}"`,
+      instruction: `Present naturally: "오늘 ${location} 날씨는 ${condition}이고 ${tempF}°F (${tempC}°C)예요. ${suggestion}"`,
     });
   } catch (err) {
     console.error("[tool:weather]", err);
-    return `Weather service unavailable for ${city}.`;
+    return `Weather service unavailable.`;
   }
 }
 
