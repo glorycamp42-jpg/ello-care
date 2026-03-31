@@ -597,6 +597,27 @@ export async function POST(req: NextRequest) {
     const localTime = new Intl.DateTimeFormat("ko-KR", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hour12: true }).format(now);
     console.log(`[chat] timezone: ${timezone}, local date: ${laParts}, local time: ${localTime}`);
 
+    // Load saved memories for this elder
+    let memorySummary = "";
+    const elderId = body.userId || "default";
+    if (elderId !== "default") {
+      const adminDb = getSupabaseAdmin();
+      if (adminDb) {
+        const { data: mems } = await adminDb
+          .from("memories")
+          .select("date, time, content")
+          .eq("user_id", elderId)
+          .order("created_at", { ascending: false })
+          .limit(15);
+        if (mems && mems.length > 0) {
+          memorySummary = mems.map((m: { date: string; time: string; content: string }) =>
+            `${m.date}/${m.time}: ${m.content}`
+          ).join("\n");
+          console.log(`[chat] Loaded ${mems.length} memories for ${elderId}`);
+        }
+      }
+    }
+
     const systemPrompt = `CRITICAL INSTRUCTION — LANGUAGE (HIGHEST PRIORITY):
 ${langPrompt}
 Your name is ${charName}. You must ALWAYS respond in the language specified above. This rule overrides everything else.
@@ -617,7 +638,20 @@ Your personality: ${personaPrompt}
 
 The user is located in: ${userCity}. When they ask about weather or nearby places without specifying a location, use "${userCity}" as the default city. Always use Fahrenheit (°F) for temperature.
 
-The user's ID is: ${body.userId || "default"}. When using get_appointments tool, pass this as elder_id.
+The user's ID is: ${elderId}. When using get_appointments or get_memories tools, pass this as elder_id.
+
+${memorySummary ? `WHAT YOU KNOW ABOUT THIS USER (from previous conversations):
+${memorySummary}
+Use this information naturally in conversation. Reference their family, health, hobbies warmly. Don't list what you know — weave it into conversation naturally.` : "You don't have saved memories for this user yet. Use save_memory tool when they share personal details."}
+
+AUTO-SAVE IMPORTANT INFO: When the user mentions any of these, use save_memory tool immediately:
+- Family members (names, relationships): category="family"
+- Health conditions, medications, symptoms: category="health"
+- Hobbies, interests, daily activities: category="hobby"
+- Favorite foods, restaurants: category="food"
+- Where they live, places they go: category="location"
+- Church, faith-related details: category="religion"
+Do NOT ask permission to save. Just save silently and continue the conversation naturally.
 
 When using tools, always present the results naturally in your designated language. Don't show raw data — summarize it warmly.`;
 
@@ -713,7 +747,6 @@ When using tools, always present the results naturally in your designated langua
     }
 
     const rawText = finalText.trim() || "Sorry, something went wrong.";
-    const elderId = body.userId || "default";
     const lastUserMsg = messages[messages.length - 1]?.content || "";
 
     console.log(`[chat] ===== APPOINTMENT TRACKING =====`);

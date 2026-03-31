@@ -164,15 +164,61 @@ export default function Home() {
     );
   }
 
+  async function generateSmartGreeting(currentLang: Language): Promise<string> {
+    const defaultGreeting = currentLang.greeting;
+    if (userId === "default") return defaultGreeting;
+
+    try {
+      // Fetch memories from API
+      const res = await fetch(`/api/appointments?userId=${userId}`);
+      const memRes = await fetch(`/api/memories`);
+      const memData = await memRes.json();
+      const apptData = await res.json();
+
+      const memories = memData.memories || [];
+      const appointments = apptData.appointments || [];
+
+      if (memories.length === 0 && appointments.length === 0) return defaultGreeting;
+
+      // Build context for a personalized greeting
+      const memContext = memories.slice(0, 5).map((m: { content: string }) => m.content).join(", ");
+      const apptContext = appointments.slice(0, 2).map((a: { title: string; scheduled_at: string }) => `${a.title} (${a.scheduled_at})`).join(", ");
+
+      // Ask Claude for a warm personalized greeting
+      const greetRes = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: `[SYSTEM] Generate a warm, personalized greeting. Memories: ${memContext || "none"}. Upcoming appointments: ${apptContext || "none"}. Keep it to 1-2 sentences. Be warm and caring.` }],
+          persona: persona?.id || "granddaughter",
+          langPrompt: currentLang.systemPrompt,
+          charName: currentLang.charName,
+          userId,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        }),
+      });
+      const greetData = await greetRes.json();
+      if (greetData.text && !greetData.error) {
+        console.log("[greeting] Smart greeting generated:", greetData.text.slice(0, 50));
+        return greetData.text;
+      }
+    } catch (err) {
+      console.error("[greeting] Failed, using default:", err);
+    }
+    return defaultGreeting;
+  }
+
   useEffect(() => {
     if (persona && !showSelect && !showLangSelect && messages.length === 0) {
       const currentLang = lang || getSavedLang();
-      const greetingText = currentLang.greeting;
-      const greeting: Message = { role: "assistant", content: greetingText };
-      setMessages([greeting]);
-      setLastAssistantText(greetingText);
 
-      // Check for today/tomorrow reminders
+      // Try memory-based greeting
+      generateSmartGreeting(currentLang).then((greetingText) => {
+        const greeting: Message = { role: "assistant", content: greetingText };
+        setMessages([greeting]);
+        setLastAssistantText(greetingText);
+      });
+
       checkMorningReminders();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
