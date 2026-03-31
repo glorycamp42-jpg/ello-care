@@ -100,17 +100,26 @@ export default function Home() {
     // Get current user ID for appointment saving
     try {
       const sb = createClient();
-      sb.auth.getSession().then(({ data: { session } }) => {
-        if (session?.user?.id) {
-          setUserId(session.user.id);
-          console.log("[auth] User ID from session:", session.user.id);
+      // Try getUser first (validates with server), fallback to getSession
+      sb.auth.getUser().then(({ data: { user }, error }) => {
+        if (user?.id) {
+          setUserId(user.id);
+          console.log("[auth] User ID from getUser:", user.id, "email:", user.email);
         } else {
-          console.log("[auth] No session, redirecting to /login");
-          window.location.href = "/login";
+          console.log("[auth] getUser failed:", error?.message, "— trying getSession...");
+          sb.auth.getSession().then(({ data: { session } }) => {
+            if (session?.user?.id) {
+              setUserId(session.user.id);
+              console.log("[auth] User ID from getSession:", session.user.id);
+            } else {
+              console.log("[auth] No session found, redirecting to /login");
+              window.location.href = "/login";
+            }
+          });
         }
       });
     } catch (err) {
-      console.error("[auth] Failed to get session:", err);
+      console.error("[auth] Failed to get user:", err);
     }
 
     // Load saved location or request geolocation
