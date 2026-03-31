@@ -550,12 +550,16 @@ async function saveAppointments(appointments: ParsedAppointment[], elderId: stri
 
   let saved = false;
   for (const apt of appointments) {
+    const normalizedTime = normalizeScheduledAt(apt.scheduled_at, tz);
+    console.log("[time-debug] raw scheduled_at from AI:", apt.scheduled_at);
+    console.log("[time-debug] after normalize:", normalizedTime);
+    console.log("[time-debug] timezone received:", tz);
     const row = {
       elder_id: elderId,
       title: apt.title,
       type: apt.type || "general",
       location: apt.location || "",
-      scheduled_at: normalizeScheduledAt(apt.scheduled_at, tz),
+      scheduled_at: normalizedTime,
       notes: apt.notes || "",
       source: "ello_ai",
     };

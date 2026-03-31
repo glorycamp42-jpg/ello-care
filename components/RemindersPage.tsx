@@ -119,7 +119,7 @@ export default function RemindersPage({ onClose }: RemindersPageProps) {
               const timeStr = formatTime(a.scheduled_at);
 
               return (
-                <div key={a.id} style={{ background: "#FFFBF7", borderRadius: 16, padding: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.05)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                <div key={a.id} onClick={() => window.location.href = `/appointments/${a.id}`} style={{ background: "#FFFBF7", borderRadius: 16, padding: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.05)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, cursor: "pointer" }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     {/* Type badge + date */}
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
