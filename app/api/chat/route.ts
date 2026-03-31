@@ -582,13 +582,23 @@ export async function POST(req: NextRequest) {
 
     const personaPrompt = PERSONA_PROMPTS[personaId] || PERSONA_PROMPTS.granddaughter;
 
-    const today = new Date().toISOString().split("T")[0]; // e.g. 2026-03-29
+    // Use LA timezone for correct date
+    const now = new Date();
+    const laOptions: Intl.DateTimeFormatOptions = { timeZone: "America/Los_Angeles", year: "numeric", month: "2-digit", day: "2-digit" };
+    const laParts = new Intl.DateTimeFormat("en-CA", laOptions).format(now); // YYYY-MM-DD format
+    const laFull = new Intl.DateTimeFormat("ko-KR", { timeZone: "America/Los_Angeles", year: "numeric", month: "long", day: "numeric", weekday: "long" }).format(now);
+    console.log(`[chat] Server date: ${now.toISOString()}, LA date: ${laParts}, LA full: ${laFull}`);
 
     const systemPrompt = `CRITICAL INSTRUCTION — LANGUAGE (HIGHEST PRIORITY):
 ${langPrompt}
 Your name is ${charName}. You must ALWAYS respond in the language specified above. This rule overrides everything else.
 
-Today's date is: ${today}. Use this to calculate relative dates like "내일" (tomorrow), "모레" (day after tomorrow), "다음주" (next week). Always output scheduled_at in ISO format YYYY-MM-DDTHH:MM:SS.
+IMPORTANT — TODAY'S DATE: ${laParts} (${laFull}). All date calculations MUST use this date as the reference point.
+- "오늘" / "today" = ${laParts}
+- "내일" / "tomorrow" = the day after ${laParts}
+- "모레" = two days after ${laParts}
+- "다음주" = one week after ${laParts}
+When generating scheduled_at, you MUST output a real ISO date based on the above. NEVER guess or use a random date. Format: YYYY-MM-DDTHH:MM:SS.
 
 ${BASE_RULES}
 
@@ -731,7 +741,7 @@ When using tools, always present the results naturally in your designated langua
               max_tokens: 200,
               messages: [{
                 role: "user",
-                content: `오늘 날짜: ${today}. 다음 대화에서 일정/예약/약속 정보를 추출해줘. "내일"은 오늘+1일, "모레"는 오늘+2일로 계산해. 있으면 JSON으로만 응답해: {"title":"제목","type":"hospital|adhc|pharmacy|other","location":"장소","scheduled_at":"YYYY-MM-DDTHH:MM:SS"}
+                content: `오늘 날짜: ${laParts} (${laFull}). 다음 대화에서 일정/예약/약속 정보를 추출해줘. "내일"은 ${laParts} 다음 날, "모레"는 그 다음 날로 계산해. 있으면 JSON으로만 응답해: {"title":"제목","type":"hospital|adhc|pharmacy|other","location":"장소","scheduled_at":"YYYY-MM-DDTHH:MM:SS"}
 없으면 null 로만 응답해.
 
 사용자: ${lastUserMsg}
