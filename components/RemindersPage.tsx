@@ -44,7 +44,10 @@ export default function RemindersPage({ onClose }: RemindersPageProps) {
     try {
       const res = await fetch(`/api/appointments?userId=${uid}`);
       const data = await res.json();
-      setAppointments(data.appointments || []);
+      const sorted = (data.appointments || []).sort(
+        (a: Appointment, b: Appointment) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()
+      );
+      setAppointments(sorted);
     } catch (err) {
       console.error("[reminders] Fetch failed:", err);
     } finally {

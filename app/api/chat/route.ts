@@ -499,6 +499,45 @@ function parseAppointments(text: string): { cleanText: string; appointments: Par
   return { cleanText, appointments };
 }
 
+// Normalize scheduled_at: fix Korean time expressions and ensure LA timezone
+function normalizeScheduledAt(raw: string | undefined): string {
+  if (!raw) return new Date().toISOString();
+
+  let s = raw;
+
+  // If it's a Korean time expression mixed in, parse it
+  // 오전 N시 → N:00, 오후 N시 → N+12:00
+  s = s.replace(/오전\s*(\d{1,2})시/g, (_, h) => {
+    const hour = parseInt(h);
+    return `${String(hour).padStart(2, "0")}:00:00`;
+  });
+  s = s.replace(/오후\s*(\d{1,2})시/g, (_, h) => {
+    const hour = parseInt(h);
+    const h24 = hour === 12 ? 12 : hour + 12;
+    return `${String(h24).padStart(2, "0")}:00:00`;
+  });
+  s = s.replace(/저녁\s*(\d{1,2})시/g, (_, h) => {
+    const hour = parseInt(h);
+    const h24 = hour === 12 ? 12 : hour + 12;
+    return `${String(h24).padStart(2, "0")}:00:00`;
+  });
+
+  // If it looks like a valid ISO date, use it
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    // Ensure it has time component
+    if (!s.includes("T")) {
+      return s + "T09:00:00";
+    }
+    return d.toISOString();
+  }
+
+  // Fallback: today's date at 9am LA time
+  const laDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  console.log(`[appointment] Could not parse "${raw}", using fallback: ${laDate}T09:00:00`);
+  return `${laDate}T09:00:00`;
+}
+
 async function saveAppointments(appointments: ParsedAppointment[], elderId: string): Promise<boolean> {
   if (elderId === "default") {
     console.error("[appointment] elder_id is default - skipping save");
@@ -519,7 +558,7 @@ async function saveAppointments(appointments: ParsedAppointment[], elderId: stri
       title: apt.title,
       type: apt.type || "general",
       location: apt.location || "",
-      scheduled_at: apt.scheduled_at || new Date().toISOString(),
+      scheduled_at: normalizeScheduledAt(apt.scheduled_at),
       notes: apt.notes || "",
       source: "ello_ai",
     };
