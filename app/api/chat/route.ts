@@ -523,10 +523,9 @@ async function saveAppointments(appointments: ParsedAppointment[], elderId: stri
       notes: apt.notes || "",
       source: "ello_ai",
     };
-    console.log("[appointment] elder_id being used:", elderId);
-    console.log("[appointment] Inserting row:", JSON.stringify(row));
+    console.log("[appointment] insert attempt:", JSON.stringify(row));
     const { data, error } = await supabase.from("appointments").insert(row).select();
-    console.log("[appointment] insert result:", JSON.stringify({ data, error }));
+    console.log("[appointment] insert result:", JSON.stringify({ data: data?.length ? data[0] : null, error: error ? { message: error.message, code: error.code } : null }));
     if (error) {
       console.error("[appointment] INSERT ERROR:", JSON.stringify(error));
       console.error("[appointment] error.message:", error.message);
@@ -565,6 +564,9 @@ function cleanBase64(raw: string): string {
 /* ── Main Handler ── */
 export async function POST(req: NextRequest) {
   console.log('[chat] API ROUTE CALLED');
+  console.log('[init] supabaseAdmin URL:', process.env.NEXT_PUBLIC_SUPABASE_URL?.slice(0, 30));
+  console.log('[init] service key exists:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
+  console.log('[init] service key length:', process.env.SUPABASE_SERVICE_ROLE_KEY?.length || 0);
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "API key not configured" }, { status: 500 });
@@ -694,7 +696,8 @@ When using tools, always present the results naturally in your designated langua
     const lastUserMsg = messages[messages.length - 1]?.content || "";
 
     console.log(`[chat] ===== APPOINTMENT TRACKING =====`);
-    console.log(`[chat] received userId: "${body.userId}" → elderId: "${elderId}"`);
+    console.log(`[appointment] userId received: ${body.userId}`);
+    console.log(`[appointment] elderId resolved: ${elderId}`);
     console.log(`[chat] 메시지: ${lastUserMsg.slice(0, 100)}`);
     console.log(`[chat] Raw response: ${rawText.slice(0, 300)}`);
 
