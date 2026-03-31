@@ -488,16 +488,6 @@ function ChatUI({
     }
   }
 
-  // Save message to conversations table
-  function saveConversation(role: string, content: string) {
-    if (userId === "default") return;
-    fetch("/api/conversations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, role, content }),
-    }).catch(() => {});
-  }
-
   const sendMessage = useCallback(
     async (textOverride?: string) => {
       const text = textOverride || input.trim();
@@ -529,7 +519,7 @@ function ChatUI({
       setMessages(newMsgs);
       setInput("");
       setIsLoading(true);
-      saveConversation("user", text);
+
       try {
         console.log(`[sendMessage] Fetching /api/chat with ${newMsgs.length} messages, userId=${userId}`);
         const res = await fetch("/api/chat", {
@@ -553,7 +543,7 @@ function ChatUI({
 
         setMessages([...newMsgs, { role: "assistant", content: reply }]);
         setLastAssistantText(reply);
-        saveConversation("assistant", reply);
+
         if (!data.error) playTTS(reply);
       } catch {
         setMessages([...newMsgs, { role: "assistant", content: "연결에 문제가 있어요." }]);
@@ -623,7 +613,7 @@ function ChatUI({
         const reply = data.error ? "죄송해요, 사진을 확인하는 데 문제가 있었어요." : data.text;
         setMessages([...newMsgs, { role: "assistant", content: reply }]);
         setLastAssistantText(reply);
-        saveConversation("assistant", reply);
+
         if (!data.error) playTTS(reply);
       } catch {
         setMessages([...newMsgs, { role: "assistant", content: "연결에 문제가 있어요." }]);

@@ -548,6 +548,15 @@ async function saveAppointments(appointments: ParsedAppointment[], elderId: stri
   return saved;
 }
 
+/* ── Save conversation to DB ── */
+async function saveConversation(eId: string, role: string, content: string) {
+  if (eId === "default" || !content) return;
+  const db = getSupabaseAdmin();
+  if (!db) return;
+  const { error } = await db.from("conversations").insert({ elder_id: eId, role, content });
+  if (error) console.error("[conversations] Save error:", error.message);
+}
+
 /* ── Types ── */
 type ContentBlock =
   | { type: "text"; text: string }
@@ -808,6 +817,8 @@ AI응답: ${rawText}`,
                   const extractSaved = await saveAppointments([apt], elderId);
                   console.log(`[chat] Extraction save result: ${extractSaved}`);
                   const text = cleanText || rawText;
+                  await saveConversation(elderId, "user", lastUserMsg);
+                  await saveConversation(elderId, "assistant", text);
                   return NextResponse.json({ text, appointmentSaved: extractSaved });
                 }
               } catch {
@@ -823,6 +834,11 @@ AI응답: ${rawText}`,
 
     const text = cleanText || rawText;
     console.log(`[chat] Final response (${text.length} chars), didSave=${didSave}`);
+
+    // Save conversation to DB
+    await saveConversation(elderId, "user", lastUserMsg);
+    await saveConversation(elderId, "assistant", text);
+
     return NextResponse.json({ text, appointmentSaved: didSave });
 
   } catch (error) {
