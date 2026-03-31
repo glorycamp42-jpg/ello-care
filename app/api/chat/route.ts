@@ -188,22 +188,49 @@ const TOOLS = [
 
 async function executeGetWeather(city: string): Promise<string> {
   try {
-    const res = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1&u`, {
+    const queryCity = city || "Los Angeles";
+    const res = await fetch(`https://wttr.in/${encodeURIComponent(queryCity)}?format=j1`, {
       headers: { "User-Agent": "ElloCare/1.0" },
     });
-    if (!res.ok) return `Could not fetch weather for ${city}.`;
+    if (!res.ok) return `Could not fetch weather for ${queryCity}.`;
     const data = await res.json();
     const current = data.current_condition?.[0];
-    if (!current) return `No weather data available for ${city}.`;
+    if (!current) return `No weather data available for ${queryCity}.`;
+
+    const tempF = current.temp_F;
+    const tempC = current.temp_C;
+    const feelsF = current.FeelsLikeF;
+    const feelsC = current.FeelsLikeC;
+    const condition = current.weatherDesc?.[0]?.value || "Unknown";
+    const humidity = current.humidity;
+    const windMph = current.windspeedMiles;
+
+    // Determine activity suggestion based on conditions
+    let suggestion = "";
+    const tempNum = parseInt(tempF);
+    if (condition.toLowerCase().includes("rain") || condition.toLowerCase().includes("snow")) {
+      suggestion = "우산을 챙기세요! 외출 시 조심하세요.";
+    } else if (tempNum > 85) {
+      suggestion = "더운 날이에요. 물 많이 드시고 그늘에서 쉬세요.";
+    } else if (tempNum < 50) {
+      suggestion = "쌀쌀해요. 따뜻하게 입고 나가세요.";
+    } else if (tempNum >= 65 && tempNum <= 80) {
+      suggestion = "나들이 하기 좋은 날씨네요!";
+    } else {
+      suggestion = "건강 조심하세요!";
+    }
+
     return JSON.stringify({
-      city,
-      temperature_F: current.temp_F,
-      feelslike_F: current.FeelsLikeF,
-      condition: current.weatherDesc?.[0]?.value || "Unknown",
-      humidity_percent: current.humidity,
-      wind_mph: current.windspeedMiles,
-      wind_direction: current.winddir16Point,
-      unit: "Fahrenheit (°F)",
+      city: queryCity,
+      temperature_F: tempF,
+      temperature_C: tempC,
+      feelslike_F: feelsF,
+      feelslike_C: feelsC,
+      condition,
+      humidity_percent: humidity,
+      wind_mph: windMph,
+      suggestion,
+      instruction: `Present the weather naturally. Include both °F and °C. Example format: "오늘 ${queryCity} 날씨는 ${condition}이고 ${tempF}°F (${tempC}°C)예요. ${suggestion}"`,
     });
   } catch (err) {
     console.error("[tool:weather]", err);
