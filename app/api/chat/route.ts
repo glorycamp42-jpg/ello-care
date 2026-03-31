@@ -500,9 +500,9 @@ function parseAppointments(text: string): { cleanText: string; appointments: Par
 }
 
 // Normalize scheduled_at: fix Korean time expressions and ensure LA timezone
-// Store LA local time as-is — NO UTC conversion
-function normalizeScheduledAt(raw: string | undefined): string {
-  const laDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+// Store user's local time as-is — NO UTC conversion
+function normalizeScheduledAt(raw: string | undefined, tz: string = "America/Los_Angeles"): string {
+  const laDate = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 
   if (!raw) return `${laDate}T09:00:00`;
 
@@ -535,7 +535,7 @@ function normalizeScheduledAt(raw: string | undefined): string {
   return `${laDate}T09:00:00`;
 }
 
-async function saveAppointments(appointments: ParsedAppointment[], elderId: string): Promise<boolean> {
+async function saveAppointments(appointments: ParsedAppointment[], elderId: string, tz: string = "America/Los_Angeles"): Promise<boolean> {
   if (elderId === "default") {
     console.error("[appointment] elder_id is default - skipping save");
     return false;
@@ -555,7 +555,7 @@ async function saveAppointments(appointments: ParsedAppointment[], elderId: stri
       title: apt.title,
       type: apt.type || "general",
       location: apt.location || "",
-      scheduled_at: normalizeScheduledAt(apt.scheduled_at),
+      scheduled_at: normalizeScheduledAt(apt.scheduled_at, tz),
       notes: apt.notes || "",
       source: "ello_ai",
     };
@@ -617,24 +617,29 @@ export async function POST(req: NextRequest) {
     const userCity: string = body.userCity || "Los Angeles";
 
     const personaPrompt = PERSONA_PROMPTS[personaId] || PERSONA_PROMPTS.granddaughter;
+    const timezone: string = body.timezone || "America/Los_Angeles";
 
-    // Use LA timezone for correct date
+    // Use user's device timezone for correct date
     const now = new Date();
-    const laOptions: Intl.DateTimeFormatOptions = { timeZone: "America/Los_Angeles", year: "numeric", month: "2-digit", day: "2-digit" };
+    const laOptions: Intl.DateTimeFormatOptions = { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" };
     const laParts = new Intl.DateTimeFormat("en-CA", laOptions).format(now); // YYYY-MM-DD format
-    const laFull = new Intl.DateTimeFormat("ko-KR", { timeZone: "America/Los_Angeles", year: "numeric", month: "long", day: "numeric", weekday: "long" }).format(now);
-    console.log(`[chat] Server date: ${now.toISOString()}, LA date: ${laParts}, LA full: ${laFull}`);
+    const laFull = new Intl.DateTimeFormat("ko-KR", { timeZone: timezone, year: "numeric", month: "long", day: "numeric", weekday: "long" }).format(now);
+    const localTime = new Intl.DateTimeFormat("ko-KR", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hour12: true }).format(now);
+    console.log(`[chat] timezone: ${timezone}, local date: ${laParts}, local time: ${localTime}`);
 
     const systemPrompt = `CRITICAL INSTRUCTION — LANGUAGE (HIGHEST PRIORITY):
 ${langPrompt}
 Your name is ${charName}. You must ALWAYS respond in the language specified above. This rule overrides everything else.
 
-IMPORTANT — TODAY'S DATE: ${laParts} (${laFull}). All date calculations MUST use this date as the reference point.
+IMPORTANT — DATE AND TIME:
+- 사용자 시간대: ${timezone}
+- 오늘 날짜: ${laParts} (${laFull})
+- 현재 사용자 현지 시간: ${localTime}
 - "오늘" / "today" = ${laParts}
 - "내일" / "tomorrow" = the day after ${laParts}
 - "모레" = two days after ${laParts}
 - "다음주" = one week after ${laParts}
-When generating scheduled_at, you MUST output a real ISO date based on the above. NEVER guess or use a random date. Format: YYYY-MM-DDTHH:MM:SS.
+When generating scheduled_at, you MUST output the date in the user's LOCAL time. NEVER convert to UTC. NEVER guess. Format: YYYY-MM-DDTHH:MM:SS (no Z suffix, no timezone offset).
 
 ${BASE_RULES}
 
@@ -755,7 +760,7 @@ When using tools, always present the results naturally in your designated langua
 
     if (appointments.length > 0) {
       console.log(`[chat] Saving ${appointments.length} inline appointment(s)...`);
-      didSave = await saveAppointments(appointments, elderId);
+      didSave = await saveAppointments(appointments, elderId, timezone);
       console.log(`[chat] Inline save result: ${didSave}`);
     } else {
       // Fallback: separate extraction call if user mentioned schedule-related keywords
@@ -797,7 +802,7 @@ AI응답: ${rawText}`,
                 console.log(`[chat] 파싱된 JSON:`, JSON.stringify(apt));
                 if (apt && apt.title) {
                   console.log(`[chat] Saving extracted appointment: ${apt.title} (${apt.type})`);
-                  const extractSaved = await saveAppointments([apt], elderId);
+                  const extractSaved = await saveAppointments([apt], elderId, timezone);
                   console.log(`[chat] Extraction save result: ${extractSaved}`);
                   const text = cleanText || rawText;
                   return NextResponse.json({ text, appointmentSaved: extractSaved });

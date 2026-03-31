@@ -453,7 +453,7 @@ function ChatUI({
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: newMsgs, persona: persona.id, langPrompt: lang.systemPrompt, charName: lang.charName, userCity, userId }),
+          body: JSON.stringify({ messages: newMsgs, persona: persona.id, langPrompt: lang.systemPrompt, charName: lang.charName, userCity, userId, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
         });
         console.log(`[sendMessage] Response status: ${res.status}`);
         const data = await res.json();
