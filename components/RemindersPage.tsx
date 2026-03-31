@@ -68,20 +68,29 @@ export default function RemindersPage({ onClose }: RemindersPageProps) {
     }
   }
 
+  // Parse stored time string directly — no UTC conversion
   function formatDate(iso: string): string {
-    try {
-      const d = new Date(iso);
-      if (isNaN(d.getTime())) return iso;
-      return d.toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" });
-    } catch { return iso; }
+    if (!iso) return "";
+    // Parse YYYY-MM-DD from the string directly
+    const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!match) return iso;
+    const [, y, m, d] = match;
+    const months = ["1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"];
+    const days = ["일","월","화","수","목","금","토"];
+    const date = new Date(parseInt(y), parseInt(m) - 1, parseInt(d));
+    return `${months[parseInt(m) - 1]} ${parseInt(d)}일 (${days[date.getDay()]})`;
   }
 
   function formatTime(iso: string): string {
-    try {
-      const d = new Date(iso);
-      if (isNaN(d.getTime())) return "";
-      return d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
-    } catch { return ""; }
+    if (!iso) return "";
+    // Parse HH:MM from the string directly
+    const match = iso.match(/T(\d{2}):(\d{2})/);
+    if (!match) return "";
+    const h = parseInt(match[1]);
+    const m = match[2];
+    const ampm = h < 12 ? "오전" : "오후";
+    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    return `${ampm} ${h12}:${m}`;
   }
 
   return (

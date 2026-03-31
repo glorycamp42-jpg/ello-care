@@ -500,42 +500,7 @@ function parseAppointments(text: string): { cleanText: string; appointments: Par
 }
 
 // Normalize scheduled_at: fix Korean time expressions and ensure LA timezone
-// Store user's local time as-is — NO UTC conversion
-function normalizeScheduledAt(raw: string | undefined, tz: string = "America/Los_Angeles"): string {
-  const laDate = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-
-  if (!raw) return `${laDate}T09:00:00`;
-
-  let s = raw;
-
-  // Replace Korean time expressions with 24h format
-  s = s.replace(/오전\s*(\d{1,2})시/g, (_, h) => `${String(parseInt(h)).padStart(2, "0")}:00:00`);
-  s = s.replace(/오후\s*(\d{1,2})시/g, (_, h) => {
-    const hr = parseInt(h);
-    return `${String(hr === 12 ? 12 : hr + 12).padStart(2, "0")}:00:00`;
-  });
-  s = s.replace(/저녁\s*(\d{1,2})시/g, (_, h) => {
-    const hr = parseInt(h);
-    return `${String(hr === 12 ? 12 : hr + 12).padStart(2, "0")}:00:00`;
-  });
-
-  // If already has T and looks like ISO, return as-is (no .toISOString() which converts to UTC)
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) {
-    console.log(`[appointment] Storing as-is: ${s}`);
-    return s;
-  }
-
-  // Date without time → add default 09:00
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-    return `${s}T09:00:00`;
-  }
-
-  // Fallback
-  console.log(`[appointment] Could not parse "${raw}", fallback: ${laDate}T09:00:00`);
-  return `${laDate}T09:00:00`;
-}
-
-async function saveAppointments(appointments: ParsedAppointment[], elderId: string, tz: string = "America/Los_Angeles"): Promise<boolean> {
+async function saveAppointments(appointments: ParsedAppointment[], elderId: string): Promise<boolean> {
   if (elderId === "default") {
     console.error("[appointment] elder_id is default - skipping save");
     return false;
@@ -550,16 +515,17 @@ async function saveAppointments(appointments: ParsedAppointment[], elderId: stri
 
   let saved = false;
   for (const apt of appointments) {
-    const normalizedTime = normalizeScheduledAt(apt.scheduled_at, tz);
-    console.log("[time-debug] raw scheduled_at from AI:", apt.scheduled_at);
-    console.log("[time-debug] after normalize:", normalizedTime);
-    console.log("[time-debug] timezone received:", tz);
+    // Trust AI's scheduled_at as-is — no timezone conversion
+    const rawTime = apt.scheduled_at || new Date().toISOString().replace("Z", "");
+    // Strip trailing Z or timezone offset to prevent DB from converting
+    const cleanTime = rawTime.replace(/Z$/, "").replace(/[+-]\d{2}:\d{2}$/, "");
+    console.log("[time-debug] raw from AI:", apt.scheduled_at, "→ storing:", cleanTime);
     const row = {
       elder_id: elderId,
       title: apt.title,
       type: apt.type || "general",
       location: apt.location || "",
-      scheduled_at: normalizedTime,
+      scheduled_at: cleanTime,
       notes: apt.notes || "",
       source: "ello_ai",
     };
@@ -764,7 +730,7 @@ When using tools, always present the results naturally in your designated langua
 
     if (appointments.length > 0) {
       console.log(`[chat] Saving ${appointments.length} inline appointment(s)...`);
-      didSave = await saveAppointments(appointments, elderId, timezone);
+      didSave = await saveAppointments(appointments, elderId);
       console.log(`[chat] Inline save result: ${didSave}`);
     } else {
       // Fallback: separate extraction call if user mentioned schedule-related keywords
@@ -806,7 +772,7 @@ AI응답: ${rawText}`,
                 console.log(`[chat] 파싱된 JSON:`, JSON.stringify(apt));
                 if (apt && apt.title) {
                   console.log(`[chat] Saving extracted appointment: ${apt.title} (${apt.type})`);
-                  const extractSaved = await saveAppointments([apt], elderId, timezone);
+                  const extractSaved = await saveAppointments([apt], elderId);
                   console.log(`[chat] Extraction save result: ${extractSaved}`);
                   const text = cleanText || rawText;
                   return NextResponse.json({ text, appointmentSaved: extractSaved });
