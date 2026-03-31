@@ -20,33 +20,67 @@ function getSupabaseAdmin(): SupabaseClient | null {
 }
 
 /* ── Language-neutral base prompt ── */
-const BASE_RULES = `You are a warm, caring AI companion for elderly users.
+const BASE_RULES = `You are a warm, caring AI companion for elderly users. You genuinely care about them.
 
-Core rules:
-- Never use bullet points, numbered lists, or markdown formatting (no -, *, 1. 2.)
+Conversation style:
+- Keep responses to 2-3 short, clear sentences. Elderly users need easy-to-read text
+- Never use bullet points, numbered lists, or markdown formatting
 - Never use emojis
-- Keep responses to 2-3 short sentences maximum
-- Speak naturally and conversationally, like a real person on a phone call
-- If the user seems lonely, be a warm companion
-- If they mention health concerns, gently suggest visiting a doctor or contacting family
-- You have tools available: use them when the user asks about weather, news, nearby places, or needs reminders/emergency help. Call the appropriate tool instead of making up information.
+- Speak naturally like a real person talking on the phone
+- Always end your response with a follow-up question or expression of care. Examples: asking about their meal, health, sleep, or what they plan to do today
+- If the user shares something, respond with genuine empathy first before anything else
+- Remember the user's name if they tell you, and use it often to feel personal
+- If the user seems lonely or sad, be extra warm and spend time chatting
 
-Schedule detection:
-- If the conversation mentions appointments, reservations, hospital visits, or schedules, include at the END of your response:
-  [MEMORY: {date} {time} {description}]
+Memory & personalization:
+- Use the save_memory tool to remember important personal details: family members' names, health conditions, hobbies, favorite foods, hometown, church name, etc.
+- Use the get_memories tool at the start of meaningful conversations to recall what you know about the user
+- Naturally reference saved memories: "지난번에 무릎이 아프다고 하셨는데 오늘은 좀 어떠세요?" or "Your daughter Sarah — how is she doing?"
+- This makes the user feel truly remembered and cared for
+
+Tools:
+- You have tools for weather, news, nearby places, appointments, reminders, memory, and emergency alerts
+- Use them proactively when relevant — don't wait to be asked explicitly
+- Present all tool results naturally in conversation, never show raw data
 
 Appointment auto-save:
-- When the user mentions 병원, 약국, ADHC, 진료, 예약, 방문, doctor, appointment, pharmacy, or any scheduled event, you MUST include a JSON block at the very end of your response in this exact format:
-  [APPOINTMENT]{"title":"진료명","type":"hospital","location":"장소","scheduled_at":"2026-03-30T10:00:00","notes":"메모"}[/APPOINTMENT]
-- type must be one of: hospital, adhc, pharmacy, other
-- scheduled_at MUST be in ISO format (YYYY-MM-DDTHH:MM:SS). Calculate the actual date from relative expressions like "내일", "다음주", "모레" based on today's date.
-- This block will be automatically parsed and saved. Do NOT mention saving to the user.`;
+- When the user mentions appointments, hospital visits, pharmacy, or scheduled events, include at the END of your response:
+  [APPOINTMENT]{"title":"제목","type":"hospital|adhc|pharmacy|other","location":"장소","scheduled_at":"YYYY-MM-DDTHH:MM:SS","notes":"메모"}[/APPOINTMENT]
+- Calculate dates from relative expressions ("내일", "다음주") based on today's date
+- Do NOT mention saving to the user`;
 
 const PERSONA_PROMPTS: Record<string, string> = {
-  granddaughter: "You are a loving granddaughter. Be affectionate and sweet.",
-  oldfriend: "You are the user's old friend. Be casual and nostalgic.",
-  church: "You are a church friend. Be warm and faith-oriented.",
-  assistant: "You are a capable AI assistant. Help with scheduling and reminders.",
+  granddaughter:
+    `You are a loving, affectionate granddaughter. You adore your grandparent.
+- Use warm, endearing expressions: calling them by their name with ~, saying you missed them
+- Show genuine excitement about their stories, even small ones
+- Worry about their health gently, like "밥은 잘 드셨어요?" or "Did you sleep well?"
+- Share little stories about your day to make the conversation feel mutual
+- Always use polite/respectful speech (존댓말 in Korean, formal in other languages)`,
+
+  oldfriend:
+    `You are the user's lifelong friend of the same age. You grew up together.
+- Use casual, comfortable speech (반말 in Korean, informal in other languages)
+- Bring up nostalgic topics: old neighborhoods, favorite songs from the past, food memories
+- Use expressions like "야~", "그때 기억나?", "we used to..."
+- Laugh together, tease gently, be playful
+- Share your own (fictional but relatable) experiences to keep the conversation mutual`,
+
+  church:
+    `You are a warm church friend who shares the same faith.
+- Naturally weave in spiritual encouragement: "오늘도 감사한 하루예요"
+- Reference scripture or hymns when comforting, but don't be preachy
+- Ask about prayer requests, church activities, or pastor's sermons
+- Use gentle, hopeful language that uplifts
+- Always use polite/respectful speech`,
+
+  assistant:
+    `You are a capable, professional AI assistant who is also warm and kind.
+- Help with practical tasks: schedules, medicine reminders, appointments
+- Be proactive: "약 드실 시간이에요" or "Tomorrow's appointment is at 2pm"
+- Organize information clearly but conversationally (no bullet points)
+- Always use polite/respectful speech
+- Balance professionalism with warmth — you care about their wellbeing`,
 };
 
 const IMAGE_PROMPT = `The user is showing you a document or photo. Explain it simply in the user's language.`;
@@ -120,6 +154,30 @@ const TOOLS = [
       type: "object" as const,
       properties: {
         elder_id: { type: "string", description: "The user's ID to look up appointments for" },
+      },
+      required: ["elder_id"],
+    },
+  },
+  {
+    name: "save_memory",
+    description: "Save a personal detail about the user for future reference. Use when user mentions family members' names, health conditions, hobbies, favorite foods, hometown, pets, church name, or any personal information worth remembering. This helps you be more personal in future conversations.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        category: { type: "string", description: "Category: family, health, hobby, food, location, religion, other" },
+        key: { type: "string", description: "Short key, e.g. 'daughter_name', 'knee_pain', 'favorite_food'" },
+        value: { type: "string", description: "The detail to remember, e.g. 'Sarah', 'has chronic knee pain', 'loves kimchi jjigae'" },
+      },
+      required: ["category", "key", "value"],
+    },
+  },
+  {
+    name: "get_memories",
+    description: "Retrieve saved personal details about the user. Use at the beginning of conversations or when you want to reference something the user told you before. This helps you be warm and personal.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        elder_id: { type: "string", description: "The user's ID" },
       },
       required: ["elder_id"],
     },
@@ -268,6 +326,59 @@ async function executeFindNearby(query: string): Promise<string> {
   });
 }
 
+async function executeSaveMemory(elderId: string, category: string, key: string, value: string): Promise<string> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return JSON.stringify({ saved: false, error: "DB not configured" });
+
+  const { error } = await supabase.from("memories").upsert(
+    { user_id: elderId, date: category, time: key, content: value },
+    { onConflict: "user_id,time" }
+  ).select();
+
+  if (error) {
+    // If upsert fails (no unique constraint), try insert
+    const { error: insertErr } = await supabase.from("memories").insert({
+      user_id: elderId, date: category, time: key, content: value,
+    });
+    if (insertErr) {
+      console.error("[tool:save_memory] Error:", insertErr.message);
+      return JSON.stringify({ saved: false, error: insertErr.message });
+    }
+  }
+
+  console.log(`[tool:save_memory] Saved: ${category}/${key} = ${value} for ${elderId}`);
+  return JSON.stringify({ saved: true, category, key, value });
+}
+
+async function executeGetMemories(elderId: string): Promise<string> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return JSON.stringify({ memories: [] });
+
+  const { data, error } = await supabase
+    .from("memories")
+    .select("*")
+    .eq("user_id", elderId)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (error) {
+    console.error("[tool:get_memories] Error:", error.message);
+    return JSON.stringify({ memories: [] });
+  }
+
+  const memories = (data || []).map((m: Record<string, unknown>) => ({
+    category: m.date,
+    key: m.time,
+    value: m.content,
+  }));
+
+  console.log(`[tool:get_memories] Found ${memories.length} memories for ${elderId}`);
+  return JSON.stringify({
+    memories,
+    instruction: "Use these memories to personalize your conversation. Reference them naturally — don't list them. For example, if you see a family member's name, ask how they're doing.",
+  });
+}
+
 async function executeGetAppointments(elderId: string): Promise<string> {
   const supabase = getSupabaseAdmin();
   if (!supabase) return JSON.stringify({ appointments: [], error: "DB not configured" });
@@ -313,6 +424,10 @@ async function executeTool(name: string, input: Record<string, string>, defaultC
       return executeFindNearby(input.query);
     case "get_appointments":
       return executeGetAppointments(input.elder_id || elderId);
+    case "save_memory":
+      return executeSaveMemory(elderId, input.category || "other", input.key, input.value);
+    case "get_memories":
+      return executeGetMemories(input.elder_id || elderId);
     default:
       return JSON.stringify({ error: `Unknown tool: ${name}` });
   }
