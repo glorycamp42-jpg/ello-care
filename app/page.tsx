@@ -615,15 +615,8 @@ function ChatUI({
             {getPersonaText(persona.id, lang.code).name}
           </span>
 
-          {/* Settings gear */}
-          <button onClick={onChangeCharacter}
-            className="w-8 h-8 rounded-full bg-coral-pastel flex items-center justify-center hover:bg-coral/15 transition-colors"
-            aria-label="캐릭터 변경">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FF6B35" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
-          </button>
+          {/* Settings menu */}
+          <SettingsMenu onChangeCharacter={onChangeCharacter} />
         </div>
       </header>
 
@@ -778,6 +771,73 @@ function ChatUI({
           </button>
         </div>
       </nav>
+    </div>
+  );
+}
+
+/* ── Settings Dropdown Menu ── */
+function SettingsMenu({ onChangeCharacter }: { onChangeCharacter: () => void }) {
+  const [open, setOpen] = useState(false);
+
+  async function handleLogout() {
+    const sb = createClient();
+    await sb.auth.signOut();
+    window.location.href = "/login";
+  }
+
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          width: 32, height: 32, borderRadius: 16,
+          background: "#FFE6D9", border: "none", cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}
+        aria-label="설정"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FF6B35" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" />
+        </svg>
+      </button>
+
+      {open && (
+        <>
+          {/* Backdrop */}
+          <div
+            onClick={() => setOpen(false)}
+            style={{ position: "fixed", inset: 0, zIndex: 40 }}
+          />
+          {/* Menu */}
+          <div style={{
+            position: "absolute", top: 36, right: 0, zIndex: 50,
+            background: "#fff", borderRadius: 12, boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
+            minWidth: 160, overflow: "hidden",
+          }}>
+            <button
+              onClick={() => { setOpen(false); onChangeCharacter(); }}
+              style={{
+                display: "block", width: "100%", padding: "12px 16px",
+                fontSize: 14, color: "#3D3530", background: "none", border: "none",
+                textAlign: "left", cursor: "pointer",
+              }}
+            >
+              캐릭터 변경
+            </button>
+            <div style={{ height: 1, background: "#f0f0f0" }} />
+            <button
+              onClick={() => { setOpen(false); handleLogout(); }}
+              style={{
+                display: "block", width: "100%", padding: "12px 16px",
+                fontSize: 14, color: "#EF4444", background: "none", border: "none",
+                textAlign: "left", cursor: "pointer",
+              }}
+            >
+              로그아웃
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
