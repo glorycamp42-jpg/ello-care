@@ -212,12 +212,37 @@ export default function Home() {
     if (persona && !showSelect && !showLangSelect && messages.length === 0) {
       const currentLang = lang || getSavedLang();
 
-      // Try memory-based greeting
-      generateSmartGreeting(currentLang).then((greetingText) => {
-        const greeting: Message = { role: "assistant", content: greetingText };
-        setMessages([greeting]);
-        setLastAssistantText(greetingText);
-      });
+      // Try to restore today's conversation first
+      if (userId !== "default") {
+        fetch(`/api/conversations?userId=${userId}`)
+          .then((r) => r.json())
+          .then((data) => {
+            const restored = (data.messages || []).map((m: { role: string; content: string }) => ({
+              role: m.role as "user" | "assistant",
+              content: m.content,
+            }));
+
+            if (restored.length > 0) {
+              console.log(`[chat] Restored ${restored.length} messages from today`);
+              setMessages(restored);
+              setLastAssistantText(restored[restored.length - 1]?.content || "");
+            } else {
+              // No previous conversation — show smart greeting
+              generateSmartGreeting(currentLang).then((greetingText) => {
+                setMessages([{ role: "assistant", content: greetingText }]);
+                setLastAssistantText(greetingText);
+              });
+            }
+          })
+          .catch(() => {
+            // Fallback to default greeting
+            setMessages([{ role: "assistant", content: currentLang.greeting }]);
+            setLastAssistantText(currentLang.greeting);
+          });
+      } else {
+        setMessages([{ role: "assistant", content: currentLang.greeting }]);
+        setLastAssistantText(currentLang.greeting);
+      }
 
       checkMorningReminders();
     }
@@ -463,6 +488,16 @@ function ChatUI({
     }
   }
 
+  // Save message to conversations table
+  function saveConversation(role: string, content: string) {
+    if (userId === "default") return;
+    fetch("/api/conversations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, role, content }),
+    }).catch(() => {});
+  }
+
   const sendMessage = useCallback(
     async (textOverride?: string) => {
       const text = textOverride || input.trim();
@@ -494,6 +529,7 @@ function ChatUI({
       setMessages(newMsgs);
       setInput("");
       setIsLoading(true);
+      saveConversation("user", text);
       try {
         console.log(`[sendMessage] Fetching /api/chat with ${newMsgs.length} messages, userId=${userId}`);
         const res = await fetch("/api/chat", {
@@ -517,6 +553,7 @@ function ChatUI({
 
         setMessages([...newMsgs, { role: "assistant", content: reply }]);
         setLastAssistantText(reply);
+        saveConversation("assistant", reply);
         if (!data.error) playTTS(reply);
       } catch {
         setMessages([...newMsgs, { role: "assistant", content: "연결에 문제가 있어요." }]);
@@ -586,6 +623,7 @@ function ChatUI({
         const reply = data.error ? "죄송해요, 사진을 확인하는 데 문제가 있었어요." : data.text;
         setMessages([...newMsgs, { role: "assistant", content: reply }]);
         setLastAssistantText(reply);
+        saveConversation("assistant", reply);
         if (!data.error) playTTS(reply);
       } catch {
         setMessages([...newMsgs, { role: "assistant", content: "연결에 문제가 있어요." }]);
