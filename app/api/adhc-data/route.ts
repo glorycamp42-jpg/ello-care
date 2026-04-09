@@ -41,20 +41,20 @@ export async function GET(req: NextRequest) {
 
     const { data: attendance } = await totalmedixSupabase
       .from('attendance')
-      .select('date, check_in, check_out, status')
+      .select('date, arrival_time, departure_time, status')
       .eq('participant_id', participantId)
       .gte('date', sevenDaysAgo.toISOString().split('T')[0])
       .order('date', { ascending: false }).limit(7)
 
     const { data: vitals } = await totalmedixSupabase
       .from('vitals')
-      .select('measured_at, blood_pressure_systolic, blood_pressure_diastolic, temperature, pulse, pain_level')
+      .select('date, time, bp_systolic, bp_diastolic, pulse, temp, pain_level')
       .eq('participant_id', participantId)
-      .order('measured_at', { ascending: false }).limit(3)
+      .order('date', { ascending: false }).limit(3)
 
     const { data: medications } = await totalmedixSupabase
       .from('medications')
-      .select('name, dosage, frequency, time_slots, status')
+      .select('name, dosage, frequency, schedule_times, status')
       .eq('participant_id', participantId)
       .eq('status', 'active')
 
@@ -70,13 +70,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       connected: true,
       participant: participant ? { name: `${participant.first_name} ${participant.last_name}`, enrollment_date: participant.enrollment_date, status: participant.status } : null,
-      attendance: attendance || [],
-      vitals: (vitals || []).map(v => ({
-        date: v.measured_at,
-        bp: v.blood_pressure_systolic && v.blood_pressure_diastolic ? `${v.blood_pressure_systolic}/${v.blood_pressure_diastolic}` : null,
-        temp: v.temperature, pulse: v.pulse, pain: v.pain_level
+      attendance: (attendance || []).map(a => ({
+        date: a.date, check_in: a.arrival_time, check_out: a.departure_time, status: a.status
       })),
-      medications: (medications || []).map(m => ({ name: m.name, dosage: m.dosage, frequency: m.frequency, times: m.time_slots })),
+      vitals: (vitals || []).map(v => ({
+        date: v.date + (v.time ? `T${v.time}` : ''),
+        bp: v.bp_systolic && v.bp_diastolic ? `${v.bp_systolic}/${v.bp_diastolic}` : null,
+        temp: v.temp, pulse: v.pulse, pain: v.pain_level
+      })),
+      medications: (medications || []).map(m => ({ name: m.name, dosage: m.dosage, frequency: m.frequency, times: m.schedule_times })),
       upcomingSchedule: appointments || []
     })
   } catch (error) {
