@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-// ello-care Supabase (로그인 유저 이메일 조회용)
+// ello-care Supabase (adhc_connections 테이블 조회용)
 const elloCareSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// totalmedix Supabase (participant_ello_link, participants 등 테이블)
+// totalmedix Supabase (participants, attendance 등 ADHC 데이터)
 const totalmedixSupabase = createClient(
   process.env.TOTALMEDIX_SUPABASE_URL!,
   process.env.TOTALMEDIX_SUPABASE_SERVICE_ROLE_KEY!
@@ -18,52 +18,19 @@ export async function GET(req: NextRequest) {
   if (!elderId) return NextResponse.json({ error: 'elderId 필요' }, { status: 400 })
 
   try {
-    // 1. ello-care에서 로그인 유저의 이메일 조회
-    const { data: { user: elloUser } } = await elloCareSupabase.auth.admin.getUserById(elderId)
-    if (!elloUser?.email) return NextResponse.json({ connected: false })
+    // 1. ello-care의 adhc_connections 테이블에서 participant_id 조회
+    const { data: connection } = await elloCareSupabase
+      .from('adhc_connections')
+      .select('participant_id')
+      .eq('ello_user_id', elderId)
+      .eq('status', 'active')
+      .single()
 
-    // 2. totalmedix에서 같은 이메일의 유저 찾기
-    const { data: { users: tmUsers } } = await totalmedixSupabase.auth.admin.listUsers()
-    const tmFamilyUser = tmUsers?.find(u => u.email === elloUser.email)
+    if (!connection) return NextResponse.json({ connected: false })
 
-    let participantId: number | null = null
+    const participantId = connection.participant_id
 
-    if (tmFamilyUser) {
-      // 3a. family_links에서 elder_id 찾기
-      const { data: familyLink } = await totalmedixSupabase
-        .from('family_links')
-        .select('elder_id')
-        .eq('family_id', tmFamilyUser.id)
-        .single()
-
-      if (familyLink) {
-        // 4a. participant_ello_link에서 participant_id 찾기
-        const { data: link } = await totalmedixSupabase
-          .from('participant_ello_link')
-          .select('participant_id')
-          .eq('ello_user_id', familyLink.elder_id)
-          .eq('status', 'active')
-          .single()
-
-        if (link) participantId = link.participant_id
-      }
-    }
-
-    // 3b. family_links로 못 찾으면 직접 ello_user_id로도 시도
-    if (!participantId) {
-      const { data: directLink } = await totalmedixSupabase
-        .from('participant_ello_link')
-        .select('participant_id')
-        .eq('ello_user_id', elderId)
-        .eq('status', 'active')
-        .single()
-
-      if (directLink) participantId = directLink.participant_id
-    }
-
-    if (!participantId) return NextResponse.json({ connected: false })
-
-    // 데이터 조회
+    // 2. totalmedix에서 ADHC 데이터 조회
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
 
