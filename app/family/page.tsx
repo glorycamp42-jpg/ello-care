@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
+import ADHCActivityTab from "@/components/ADHCActivityTab";
 
 interface Appointment {
   id: string;
@@ -244,6 +245,10 @@ export default function FamilyHome() {
             ))}
           </div>
         </div>
+
+        {/* ADHC Activity Tab */}
+        {elderId && <ADHCActivityTab elderId={elderId} />}
+
       </div>
     </div>
   );
