@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+// totalmedix Supabase에 연결 (participant_ello_link, participants 등 테이블이 여기에 있음)
+const totalmedixSupabase = createClient(
+  process.env.TOTALMEDIX_SUPABASE_URL!,
+  process.env.TOTALMEDIX_SUPABASE_SERVICE_ROLE_KEY!
 )
 
 export async function GET(req: NextRequest) {
@@ -11,7 +12,7 @@ export async function GET(req: NextRequest) {
   if (!elderId) return NextResponse.json({ error: 'elderId 필요' }, { status: 400 })
 
   try {
-    const { data: link } = await supabase
+    const { data: link } = await totalmedixSupabase
       .from('participant_ello_link')
       .select('participant_id, status')
       .eq('ello_user_id', elderId)
@@ -24,32 +25,32 @@ export async function GET(req: NextRequest) {
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
 
-    const { data: participant } = await supabase
+    const { data: participant } = await totalmedixSupabase
       .from('participants')
       .select('first_name, last_name, enrollment_date, status')
       .eq('id', participantId).single()
 
-    const { data: attendance } = await supabase
+    const { data: attendance } = await totalmedixSupabase
       .from('attendance')
       .select('date, check_in, check_out, status')
       .eq('participant_id', participantId)
       .gte('date', sevenDaysAgo.toISOString().split('T')[0])
       .order('date', { ascending: false }).limit(7)
 
-    const { data: vitals } = await supabase
+    const { data: vitals } = await totalmedixSupabase
       .from('vitals')
       .select('measured_at, blood_pressure_systolic, blood_pressure_diastolic, temperature, pulse, pain_level')
       .eq('participant_id', participantId)
       .order('measured_at', { ascending: false }).limit(3)
 
-    const { data: medications } = await supabase
+    const { data: medications } = await totalmedixSupabase
       .from('medications')
       .select('name, dosage, frequency, time_slots, status')
       .eq('participant_id', participantId)
       .eq('status', 'active')
 
     const today = new Date().toISOString().split('T')[0]
-    const { data: appointments } = await supabase
+    const { data: appointments } = await totalmedixSupabase
       .from('synced_appointments')
       .select('title, type, date, time, location')
       .eq('participant_id', participantId)
@@ -73,4 +74,4 @@ export async function GET(req: NextRequest) {
     console.error('ADHC data fetch error:', error)
     return NextResponse.json({ error: '데이터 조회 실패' }, { status: 500 })
   }
-      }
+}
