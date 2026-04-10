@@ -101,10 +101,50 @@ alert_level 기준:
       return NextResponse.json({ error: saveError.message }, { status: 500 })
     }
 
+    // 5. alert_level이 caution/urgent면 ello_alerts에 자동 insert
+    let alertCreated = false
+    if (moodData.alert_level === 'caution' || moodData.alert_level === 'urgent') {
+      // 같은 참가자의 오늘 날짜 alert가 이미 있는지 확인 (중복 방지)
+      const { data: existingAlert } = await totalmedixSupabase
+        .from('ello_alerts')
+        .select('id, alert_level')
+        .eq('participant_id', connection.participant_id)
+        .gte('created_at', today + 'T00:00:00')
+        .lte('created_at', today + 'T23:59:59')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      // 기존 alert가 없거나, urgent로 승급된 경우만 새 alert 생성
+      const shouldCreateAlert = !existingAlert ||
+        (existingAlert.alert_level === 'caution' && moodData.alert_level === 'urgent')
+
+      if (shouldCreateAlert) {
+        const { error: alertError } = await totalmedixSupabase
+          .from('ello_alerts')
+          .insert({
+            participant_id: connection.participant_id,
+            mood_summary_id: saved.id,
+            alert_level: moodData.alert_level,
+            mood_score: moodData.mood_score,
+            summary: moodData.summary,
+            topics: moodData.topics,
+          })
+
+        if (alertError) {
+          console.error('Alert insert error:', alertError)
+        } else {
+          alertCreated = true
+          console.log(`[mood-sync] Alert created: ${moodData.alert_level} for participant ${connection.participant_id}`)
+        }
+      }
+    }
+
     return NextResponse.json({
       synced: true,
       mood: moodData,
-      saved
+      saved,
+      alertCreated
     })
   } catch (error) {
     console.error('Mood sync error:', error)
