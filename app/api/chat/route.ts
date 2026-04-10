@@ -841,13 +841,15 @@ AI응답: ${rawText}`,
 
     // Mood sync to totalmedix (비동기, 응답 지연 없음)
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+        || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
+      console.log('[mood-sync] baseUrl:', baseUrl, 'elderId:', elderId);
       fetch(`${baseUrl}/api/mood-sync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ elderId }),
-      }).catch(err => console.error('[mood-sync] trigger failed:', err));
+      }).then(res => res.json().then(data => console.log('[mood-sync] result:', JSON.stringify(data))))
+        .catch(err => console.error('[mood-sync] trigger failed:', err));
     } catch (e) { console.error('[mood-sync] error:', e); }
 
     return NextResponse.json({ text, appointmentSaved: didSave });
