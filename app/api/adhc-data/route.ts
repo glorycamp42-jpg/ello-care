@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
 
     const { data: participant } = await totalmedixSupabase
       .from('participants')
-      .select('first_name, last_name, enrollment_date, status')
+      .select('first_name, last_name, status, created_at')
       .eq('id', participantId).single()
 
     const { data: attendance } = await totalmedixSupabase
@@ -54,9 +54,9 @@ export async function GET(req: NextRequest) {
 
     const { data: medications } = await totalmedixSupabase
       .from('medications')
-      .select('name, dosage, frequency, schedule_times, status')
+      .select('medication_name, dosage, frequency, schedule_times, active')
       .eq('participant_id', participantId)
-      .eq('status', 'active')
+      .eq('active', true)
 
     const today = new Date().toISOString().split('T')[0]
     const { data: appointments } = await totalmedixSupabase
@@ -69,7 +69,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       connected: true,
-      participant: participant ? { name: `${participant.first_name} ${participant.last_name}`, enrollment_date: participant.enrollment_date, status: participant.status } : null,
+      participant: participant ? { name: `${participant.first_name} ${participant.last_name}`, enrollment_date: participant.created_at?.split('T')[0] || null, status: participant.status } : null,
       attendance: (attendance || []).map(a => ({
         date: a.date, check_in: a.arrival_time, check_out: a.departure_time, status: a.status
       })),
@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
         bp: v.bp_systolic && v.bp_diastolic ? `${v.bp_systolic}/${v.bp_diastolic}` : null,
         temp: v.temp, pulse: v.pulse, pain: v.pain_level
       })),
-      medications: (medications || []).map(m => ({ name: m.name, dosage: m.dosage, frequency: m.frequency, times: m.schedule_times })),
+      medications: (medications || []).map(m => ({ name: m.medication_name, dosage: m.dosage, frequency: m.frequency, times: m.schedule_times })),
       upcomingSchedule: appointments || []
     })
   } catch (error) {
