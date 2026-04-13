@@ -674,6 +674,23 @@ async function syncAppointmentToTotalmedix(appointment: Record<string, unknown>,
   }
 }
 
+/* ── Happiness Ticket Grant (internal, no self-fetch) ── */
+async function grantTicket(elderId: string, type: string, moodScore?: number) {
+  if (elderId === "default") return;
+  try {
+    const baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000";
+    const res = await fetch(`${baseUrl}/api/tickets`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: elderId, type, moodScore }),
+    });
+    const data = await res.json();
+    console.log(`[ticket] ${type} grant:`, JSON.stringify(data));
+  } catch (e) {
+    console.error("[ticket] grant failed:", e);
+  }
+}
+
 /* ── Mood Sync to TotalMedix (direct, no self-fetch) ── */
 async function triggerMoodSync(elderId: string) {
   if (elderId === "default") return;
@@ -740,6 +757,10 @@ async function triggerMoodSync(elderId: string) {
     console.error("[mood-sync] Save error:", error.message);
   } else {
     console.log(`[mood-sync] Synced: participant=${link.participant_id}, mood=${moodData.mood_score}, alert=${moodData.alert_level}`);
+    // 기분 보너스 티켓 (7점 이상)
+    if (moodData.mood_score >= 7) {
+      grantTicket(elderId, "mood", moodData.mood_score).catch(e => console.error("[ticket-mood] error:", e));
+    }
   }
 }
 
@@ -1102,6 +1123,14 @@ AI응답: ${rawText}`,
 
     // Mood sync to totalmedix (직접 호출, 비동기)
     triggerMoodSync(elderId).catch(e => console.error('[mood-sync] error:', e));
+
+    // 행복티켓: 대화 완료 +1
+    grantTicket(elderId, "chat").catch(e => console.error('[ticket] error:', e));
+
+    // 행복티켓: 약속 이행 보너스
+    if (didSave) {
+      grantTicket(elderId, "appointment").catch(e => console.error('[ticket] error:', e));
+    }
 
     return NextResponse.json({ text, appointmentSaved: didSave, _debug: { elderId, hasKeywords: /병원|약국|예약|약속/i.test(lastUserMsg), inlineBlocks: appointments.length } });
 

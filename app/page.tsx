@@ -9,7 +9,7 @@ import CharacterSelect, { PERSONAS, Persona, getPersonaText } from "@/components
 import { createClient } from "@/lib/supabase/client";
 import { useTickets } from "@/components/useTickets";
 import TicketToast from "@/components/TicketToast";
-import TicketPage from "@/components/TicketPage";
+import HappinessGarden from "@/components/HappinessGarden";
 import RemindersPage from "@/components/RemindersPage";
 import BiblePage from "@/components/BiblePage";
 import SafetyPage from "@/components/SafetyPage";
@@ -323,7 +323,7 @@ export default function Home() {
     return <CharacterSelect onSelect={handlePersonaSelect} initialId={persona?.id} />;
   }
   if (showTicketPage) {
-    return <TicketPage state={tickets.state} onClose={() => setShowTicketPage(false)} />;
+    return <HappinessGarden userId={userId} onClose={() => setShowTicketPage(false)} />;
   }
   if (showReminders) {
     return <RemindersPage onClose={() => setShowReminders(false)} userId={userId} />;
