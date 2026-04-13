@@ -23,7 +23,7 @@ function getSupabaseAdmin(): SupabaseClient | null {
 const BASE_RULES = `You are a warm, caring AI companion for elderly users. You genuinely care about them.
 
 Conversation style:
-- STRICT RULE: Keep responses to 2-3 short sentences MAX. Never exceed 4 sentences. Elderly users cannot read long text on a phone screen
+- ABSOLUTE RULE: Your response must be MAXIMUM 2 sentences. This is non-negotiable. If you write more than 2 sentences, the elderly user cannot read it on their small phone screen. Every response = 1 empathy/reaction sentence + 1 follow-up question. That's it.
 - Never use bullet points, numbered lists, or markdown formatting
 - Never use emojis
 - Never use parentheses () to show extra details like addresses or phone numbers inline. If needed, mention just ONE place name simply
@@ -704,7 +704,7 @@ When using tools, always present the results naturally in your designated langua
         },
         body: JSON.stringify({
           model: "claude-haiku-4-5-20251001",
-          max_tokens: 300,
+          max_tokens: 500,
           system: systemPrompt,
           messages: claudeMessages,
           tools: TOOLS,
