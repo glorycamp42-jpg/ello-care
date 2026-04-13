@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { createClient } from "@/lib/supabase/client";
+// userId is now passed as prop from parent
 
 interface Appointment {
   id: string;
@@ -25,19 +25,17 @@ const TYPE_STYLES: Record<string, { bg: string; text: string; label: string }> =
 
 interface RemindersPageProps {
   onClose: () => void;
+  userId?: string;
 }
 
-export default function RemindersPage({ onClose }: RemindersPageProps) {
+export default function RemindersPage({ onClose, userId }: RemindersPageProps) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    const sb = createClient();
-    sb.auth.getSession().then(({ data: { session } }) => {
-      const uid = session?.user?.id || localStorage.getItem("ello-userId") || "default";
-      console.log("[reminders] userId:", uid);
-      fetchAppointments(uid);
-    });
-  }, []);
+    const uid = userId && userId !== "default" ? userId : localStorage.getItem("ello-userId") || "default";
+    console.log("[reminders] userId:", uid);
+    fetchAppointments(uid);
+  }, [userId]);
 
   async function fetchAppointments(uid: string) {
     try {

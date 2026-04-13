@@ -326,7 +326,7 @@ export default function Home() {
     return <TicketPage state={tickets.state} onClose={() => setShowTicketPage(false)} />;
   }
   if (showReminders) {
-    return <RemindersPage onClose={() => setShowReminders(false)} />;
+    return <RemindersPage onClose={() => setShowReminders(false)} userId={userId} />;
   }
   if (showBible) {
     return <BiblePage
