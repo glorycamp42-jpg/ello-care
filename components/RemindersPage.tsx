@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/client";
 
 interface Appointment {
   id: string;
@@ -31,20 +31,10 @@ export default function RemindersPage({ onClose }: RemindersPageProps) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    // localStorage first (most reliable), then session
-    const stored = localStorage.getItem("ello-userId");
-    if (stored && stored !== "default") {
-      console.log("[reminders] userId from localStorage:", stored);
-      fetchAppointments(stored);
-      return;
-    }
-    const sb = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
+    const sb = createClient();
     sb.auth.getSession().then(({ data: { session } }) => {
-      const uid = session?.user?.id || "default";
-      console.log("[reminders] userId from session:", uid);
+      const uid = session?.user?.id || localStorage.getItem("ello-userId") || "default";
+      console.log("[reminders] userId:", uid);
       fetchAppointments(uid);
     });
   }, []);
