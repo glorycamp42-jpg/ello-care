@@ -701,7 +701,7 @@ When using tools, always present the results naturally in your designated langua
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-haiku-3-5-20241022",
           max_tokens: 300,
           system: systemPrompt,
           messages: claudeMessages,
@@ -792,7 +792,7 @@ When using tools, always present the results naturally in your designated langua
               "anthropic-version": "2023-06-01",
             },
             body: JSON.stringify({
-              model: "claude-sonnet-4-20250514",
+              model: "claude-haiku-3-5-20241022",
               max_tokens: 200,
               messages: [{
                 role: "user",
