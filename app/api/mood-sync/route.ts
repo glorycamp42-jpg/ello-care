@@ -71,8 +71,8 @@ alert_level 기준:
     const moodData = JSON.parse(jsonMatch[0])
 
     // 3. totalmedix의 participant_ello_link에서 매칭 정보 가져오기
-    const { data: connection } = await elloCareSupabase
-      .from('adhc_connections')
+    const { data: connection } = await totalmedixSupabase
+      .from('participant_ello_link')
       .select('participant_id')
       .eq('ello_user_id', elderId)
       .eq('status', 'active')
