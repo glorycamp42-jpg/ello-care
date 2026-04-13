@@ -616,27 +616,52 @@ export async function POST(req: NextRequest) {
     let elderId = body.userId || "default";
     if (elderId === "default") {
       try {
-        const adminDb = getSupabaseAdmin();
-        if (adminDb) {
-          // 쿠키에서 access_token 추출
-          const cookies = req.headers.get('cookie') || '';
-          const tokenMatch = cookies.match(/sb-[^=]+-auth-token[^=]*=([^;]+)/);
-          if (tokenMatch) {
-            try {
-              const parsed = JSON.parse(decodeURIComponent(tokenMatch[1]));
-              const accessToken = Array.isArray(parsed) ? parsed[0] : parsed?.access_token;
-              if (accessToken) {
+        const cookies = req.headers.get('cookie') || '';
+        console.log('[chat] userId is default, trying cookie recovery. Cookie keys:', cookies.split(';').map(c => c.trim().split('=')[0]).filter(k => k.includes('sb-')).join(', '));
+
+        // Supabase SSR은 쿠키를 chunked로 저장: sb-<ref>-auth-token.0, sb-<ref>-auth-token.1, ...
+        // 또는 단일 쿠키: sb-<ref>-auth-token
+        const cookieMap: Record<string, string> = {};
+        cookies.split(';').forEach(c => {
+          const [key, ...vals] = c.trim().split('=');
+          if (key) cookieMap[key] = vals.join('=');
+        });
+
+        // chunked 쿠키 조립
+        let tokenStr = '';
+        const baseKey = Object.keys(cookieMap).find(k => k.match(/^sb-.*-auth-token$/));
+        if (baseKey && cookieMap[baseKey]) {
+          tokenStr = decodeURIComponent(cookieMap[baseKey]);
+        } else {
+          // chunked: sb-xxx-auth-token.0, sb-xxx-auth-token.1, ...
+          const chunkKeys = Object.keys(cookieMap).filter(k => k.match(/^sb-.*-auth-token\.\d+$/)).sort();
+          if (chunkKeys.length > 0) {
+            tokenStr = chunkKeys.map(k => decodeURIComponent(cookieMap[k])).join('');
+          }
+        }
+
+        if (tokenStr) {
+          console.log('[chat] Found auth token cookie, length:', tokenStr.length);
+          try {
+            const parsed = JSON.parse(tokenStr);
+            const accessToken = parsed?.access_token || (Array.isArray(parsed) ? parsed[0] : null);
+            if (accessToken) {
+              const adminDb = getSupabaseAdmin();
+              if (adminDb) {
                 const { data: { user } } = await adminDb.auth.getUser(accessToken);
                 if (user?.id) {
                   elderId = user.id;
                   console.log(`[chat] Recovered userId from cookie: ${elderId}`);
                 }
               }
-            } catch { console.log('[chat] Cookie token parse failed'); }
-          }
+            }
+          } catch (e) { console.log('[chat] Cookie token parse failed:', e); }
+        } else {
+          console.log('[chat] No auth token cookie found');
         }
-      } catch { console.log('[chat] Cookie auth fallback failed'); }
+      } catch (e) { console.log('[chat] Cookie auth fallback failed:', e); }
     }
+    console.log(`[chat] Final elderId: ${elderId}`);
     if (elderId !== "default") {
       const adminDb = getSupabaseAdmin();
       if (adminDb) {
@@ -808,7 +833,7 @@ When using tools, always present the results naturally in your designated langua
       console.log(`[chat] 키워드 감지: ${hasScheduleKeywords}`);
 
       if (hasScheduleKeywords) {
-        console.log("[chat] Running extraction call...");
+        console.log("[chat] Running extraction call... elderId:", elderId);
         try {
           const extractRes = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
@@ -819,11 +844,18 @@ When using tools, always present the results naturally in your designated langua
             },
             body: JSON.stringify({
               model: "claude-haiku-4-5-20251001",
-              max_tokens: 200,
+              max_tokens: 300,
               messages: [{
                 role: "user",
-                content: `오늘 날짜: ${laParts} (${laFull}). 다음 대화에서 일정/예약/약속 정보를 추출해줘. "내일"은 ${laParts} 다음 날, "모레"는 그 다음 날로 계산해. 있으면 JSON으로만 응답해: {"title":"제목","type":"hospital|adhc|pharmacy|other","location":"장소","scheduled_at":"YYYY-MM-DDTHH:MM:SS"}
-없으면 null 로만 응답해.
+                content: `오늘 날짜: ${laParts} (${laFull}). 다음 대화에서 일정/예약/약속 정보를 추출해줘.
+"내일"은 ${laParts} 다음 날, "모레"는 그 다음 날로 계산해.
+시간이 명시되지 않은 경우 "오전 9시"를 기본값으로 사용해.
+
+반드시 아래 JSON 형식으로만 응답해 (다른 텍스트 없이):
+{"title":"제목","type":"hospital","location":"","scheduled_at":"YYYY-MM-DDTHH:MM:SS"}
+
+type은: hospital, adhc, pharmacy, other 중 하나.
+일정 정보가 없으면 null 만 응답해.
 
 사용자: ${lastUserMsg}
 AI응답: ${rawText}`,
@@ -836,9 +868,12 @@ AI응답: ${rawText}`,
             const extractText = extractData.content?.[0]?.text?.trim() || "";
             console.log(`[chat] 추출 결과: ${extractText}`);
 
-            if (extractText && extractText !== "null") {
+            if (extractText && extractText !== "null" && extractText.includes("{")) {
               try {
-                const apt = JSON.parse(extractText);
+                // JSON 부분만 추출 (앞뒤 텍스트 제거)
+                const jsonMatch = extractText.match(/\{[\s\S]*\}/);
+                if (!jsonMatch) throw new Error("No JSON found");
+                const apt = JSON.parse(jsonMatch[0]);
                 console.log(`[chat] 파싱된 JSON:`, JSON.stringify(apt));
                 if (apt && apt.title) {
                   console.log(`[chat] Saving extracted appointment: ${apt.title} (${apt.type})`);
