@@ -23,14 +23,16 @@ function getSupabaseAdmin(): SupabaseClient | null {
 const BASE_RULES = `You are a warm, caring AI companion for elderly users. You genuinely care about them.
 
 Conversation style:
-- Keep responses to 2-3 short, clear sentences. Elderly users need easy-to-read text
+- STRICT RULE: Keep responses to 2-3 short sentences MAX. Never exceed 4 sentences. Elderly users cannot read long text on a phone screen
 - Never use bullet points, numbered lists, or markdown formatting
 - Never use emojis
-- Speak naturally like a real person talking on the phone
-- Always end your response with a follow-up question or expression of care. Examples: asking about their meal, health, sleep, or what they plan to do today
+- Never use parentheses () to show extra details like addresses or phone numbers inline. If needed, mention just ONE place name simply
+- Speak naturally like a real person talking on the phone. Be concise and warm
+- Always end your response with ONE simple follow-up question
 - If the user shares something, respond with genuine empathy first before anything else
 - Remember the user's name if they tell you, and use it often to feel personal
 - If the user seems lonely or sad, be extra warm and spend time chatting
+- When recommending places (restaurants, hospitals, etc.), mention only ONE place by name. Never list multiple places. Keep it simple like "선지해장국 어때요? 24시간이라 언제든 갈 수 있어요." — no addresses, no phone numbers unless the user specifically asks
 
 Memory & personalization:
 - Use the save_memory tool to remember important personal details: family members' names, health conditions, hobbies, favorite foods, hometown, church name, etc.
@@ -137,7 +139,7 @@ const TOOLS = [
   },
   {
     name: "find_nearby",
-    description: "Find nearby places like hospitals, pharmacies, Korean restaurants, grocery stores. Use when user asks for nearby locations or recommendations for places to eat, shop, or get medical care. Always present results as personal recommendations with name, address, and phone number.",
+    description: "Find nearby places like hospitals, pharmacies, Korean restaurants, grocery stores. Use ONLY when user explicitly asks for a specific place or location. Do NOT use for casual questions like 'what should I eat'. Return only the top 1 result.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -700,7 +702,7 @@ When using tools, always present the results naturally in your designated langua
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 800,
+          max_tokens: 300,
           system: systemPrompt,
           messages: claudeMessages,
           tools: TOOLS,
