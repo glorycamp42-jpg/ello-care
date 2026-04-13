@@ -752,7 +752,11 @@ async function grantTicket(elderId: string, type: string, moodScore?: number) {
         total_today: ticket.total_today,
       }).eq("id", ticket.id);
 
-      const newTotal = garden.total_tickets + ticketsAdded;
+      // Re-read garden_status fresh to avoid race conditions with concurrent requests
+      const { data: freshGarden } = await admin
+        .from("garden_status").select("total_tickets").eq("elder_id", elderId).single();
+      const baseTotal = freshGarden?.total_tickets ?? garden.total_tickets ?? 0;
+      const newTotal = baseTotal + ticketsAdded;
       const stageCalc = newTotal >= 60 ? 5 : newTotal >= 40 ? 4 : newTotal >= 25 ? 3 : newTotal >= 10 ? 2 : 1;
       await admin.from("garden_status").update({
         total_tickets: newTotal, current_stage: stageCalc, updated_at: new Date().toISOString(),
@@ -1197,16 +1201,18 @@ AI응답: ${rawText}`,
     await saveConversation(elderId, "user", lastUserMsg);
     await saveConversation(elderId, "assistant", text);
 
-    // Mood sync to totalmedix (직접 호출, 비동기)
-    triggerMoodSync(elderId).catch(e => console.error('[mood-sync] error:', e));
-
-    // 행복티켓: 대화 완료 +1
-    grantTicket(elderId, "chat").catch(e => console.error('[ticket] error:', e));
-
-    // 행복티켓: 약속 이행 보너스
-    if (didSave) {
-      grantTicket(elderId, "appointment").catch(e => console.error('[ticket] error:', e));
+    // 행복티켓: await sequentially to avoid race condition + ensure DB write completes on Vercel
+    try {
+      await grantTicket(elderId, "chat");
+      if (didSave) {
+        await grantTicket(elderId, "appointment");
+      }
+    } catch (e) {
+      console.error('[ticket] error:', e);
     }
+
+    // Mood sync to totalmedix (fire-and-forget OK, user confirmed working)
+    triggerMoodSync(elderId).catch(e => console.error('[mood-sync] error:', e));
 
     return NextResponse.json({ text, appointmentSaved: didSave, _debug: { elderId, hasKeywords: /병원|약국|예약|약속/i.test(lastUserMsg), inlineBlocks: appointments.length } });
 
