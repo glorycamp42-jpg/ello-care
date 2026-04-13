@@ -220,46 +220,48 @@ export default function Home() {
     return defaultGreeting;
   }
 
+  // 대화 복구는 단 한 번만 실행되도록 ref로 추적
+  const restoredRef = useRef(false);
+
   useEffect(() => {
-    if (persona && !showSelect && !showLangSelect && messages.length === 0) {
-      const currentLang = lang || getSavedLang();
+    // userId 가 default 면 PIN 로그인 대기 중 — 아직 복구 시도 안 함
+    if (!persona || showSelect || showLangSelect) return;
+    if (userId === "default") return;
+    if (restoredRef.current) return;
+    restoredRef.current = true;
 
-      // Try to restore today's conversation first
-      if (userId !== "default") {
-        fetch(`/api/conversations?userId=${userId}`)
-          .then((r) => r.json())
-          .then((data) => {
-            const restored = (data.messages || []).map((m: { role: string; content: string }) => ({
-              role: m.role as "user" | "assistant",
-              content: m.content,
-            }));
+    const currentLang = lang || getSavedLang();
+    console.log(`[chat] Attempting to restore conversation for userId=${userId}`);
 
-            if (restored.length > 0) {
-              console.log(`[chat] Restored ${restored.length} messages from today`);
-              setMessages(restored);
-              setLastAssistantText(restored[restored.length - 1]?.content || "");
-            } else {
-              // No previous conversation — show smart greeting
-              generateSmartGreeting(currentLang).then((greetingText) => {
-                setMessages([{ role: "assistant", content: greetingText }]);
-                setLastAssistantText(greetingText);
-              });
-            }
-          })
-          .catch(() => {
-            // Fallback to default greeting
-            setMessages([{ role: "assistant", content: currentLang.greeting }]);
-            setLastAssistantText(currentLang.greeting);
+    fetch(`/api/conversations?userId=${userId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        const restored = (data.messages || []).map((m: { role: string; content: string }) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        }));
+
+        if (restored.length > 0) {
+          console.log(`[chat] Restored ${restored.length} messages from last 24h`);
+          setMessages(restored);
+          setLastAssistantText(restored[restored.length - 1]?.content || "");
+        } else {
+          console.log("[chat] No previous conversation, generating smart greeting");
+          generateSmartGreeting(currentLang).then((greetingText) => {
+            setMessages([{ role: "assistant", content: greetingText }]);
+            setLastAssistantText(greetingText);
           });
-      } else {
+        }
+      })
+      .catch((err) => {
+        console.error("[chat] Restore failed, using default greeting:", err);
         setMessages([{ role: "assistant", content: currentLang.greeting }]);
         setLastAssistantText(currentLang.greeting);
-      }
+      });
 
-      checkMorningReminders();
-    }
+    checkMorningReminders();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [persona, showSelect, messages.length]);
+  }, [persona, showSelect, showLangSelect, userId]);
 
   async function checkMorningReminders() {
     try {
