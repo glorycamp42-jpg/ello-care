@@ -45,11 +45,17 @@ Tools:
 - Use them proactively when relevant — don't wait to be asked explicitly
 - Present all tool results naturally in conversation, never show raw data
 
-Appointment auto-save:
-- When the user mentions appointments, hospital visits, pharmacy, or scheduled events, include at the END of your response:
-  [APPOINTMENT]{"title":"제목","type":"hospital|adhc|pharmacy|other","location":"장소","scheduled_at":"YYYY-MM-DDTHH:MM:SS","notes":"메모"}[/APPOINTMENT]
-- Calculate dates from relative expressions ("내일", "다음주") based on today's date
-- Do NOT mention saving to the user`;
+CRITICAL — Appointment/Schedule saving:
+- When the user mentions ANY appointment, hospital visit, pharmacy, reservation, schedule, doctor visit, ADHC, or event with a time:
+  1. IMMEDIATELY call the set_reminder tool with date, time, and content. Do this BEFORE writing your response.
+  2. Then respond naturally confirming the save.
+  3. If date is not specified, assume "오늘" (today).
+  4. If time is not specified, assume "오전 9시".
+- Examples: "1시에 병원" → call set_reminder(date="오늘", time="1시", content="병원 예약")
+- Examples: "내일 약국" → call set_reminder(date="내일", time="오전9시", content="약국 방문")
+- Do NOT just acknowledge. You MUST call set_reminder tool.
+- Do NOT mention saving to the user — just confirm naturally like "알겠어요!"
+- Also include at the END of your response: [APPOINTMENT]{"title":"제목","type":"hospital|adhc|pharmacy|other","location":"장소","scheduled_at":"YYYY-MM-DDTHH:MM:SS","notes":"메모"}[/APPOINTMENT]`;
 
 const PERSONA_PROMPTS: Record<string, string> = {
   granddaughter:
@@ -116,13 +122,13 @@ const TOOLS = [
   },
   {
     name: "set_reminder",
-    description: "Save a medication reminder or appointment. Use when user mentions taking medicine, doctor visits, or any scheduled event.",
+    description: "IMPORTANT: You MUST use this tool whenever the user mentions ANY appointment, reservation, hospital visit, pharmacy visit, ADHC, doctor, medicine schedule, or scheduled event. Always call this tool FIRST before responding. Do not just acknowledge — actually save it.",
     input_schema: {
       type: "object" as const,
       properties: {
-        date: { type: "string", description: "Date of the reminder, e.g. '4월3일', 'tomorrow', 'Monday'" },
-        time: { type: "string", description: "Time, e.g. '오전10시', '2pm', '14:00'" },
-        content: { type: "string", description: "What the reminder is about, e.g. 'Take blood pressure medicine'" },
+        date: { type: "string", description: "Date: '오늘', '내일', '모레', 'tomorrow', '4월15일', etc." },
+        time: { type: "string", description: "Time: '1시', '오후2시', '2pm', '14:00'. Default '오전9시' if not specified." },
+        content: { type: "string", description: "What: '병원 예약', '약국 방문', '진료', 'Doctor appointment', etc." },
       },
       required: ["date", "content"],
     },
@@ -279,19 +285,84 @@ async function executeSearchNews(query: string, language: string = "ko"): Promis
   }
 }
 
-async function executeSetReminder(date: string, time: string, content: string): Promise<string> {
+async function executeSetReminder(date: string, time: string, content: string, elderId: string): Promise<string> {
   const supabase = getSupabaseAdmin();
-  if (supabase) {
-    try {
-      await supabase.from("memories").insert({
-        date, time: time || "", content, user_id: "default",
-      });
-      console.log(`[tool:reminder] Saved: ${date} ${time} - ${content}`);
-    } catch (err) {
-      console.error("[tool:reminder] DB error:", err);
-    }
+  if (!supabase || elderId === "default") {
+    console.error("[tool:reminder] Cannot save - no DB or elderId is default");
+    return JSON.stringify({ saved: false, reason: "no valid user" });
   }
-  return JSON.stringify({ saved: true, date, time, content });
+
+  try {
+    // Parse date/time into scheduled_at
+    const now = new Date();
+    let scheduledAt = "";
+
+    // Try to build a date string from the inputs
+    const dateStr = date || "";
+    const timeStr = time || "09:00";
+
+    // Handle relative dates
+    if (/내일|tomorrow/i.test(dateStr)) {
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      scheduledAt = tomorrow.toISOString().split("T")[0];
+    } else if (/모레/i.test(dateStr)) {
+      const dayAfter = new Date(now);
+      dayAfter.setDate(dayAfter.getDate() + 2);
+      scheduledAt = dayAfter.toISOString().split("T")[0];
+    } else if (/오늘|today/i.test(dateStr)) {
+      scheduledAt = now.toISOString().split("T")[0];
+    } else {
+      // Try to parse as-is or use today
+      scheduledAt = now.toISOString().split("T")[0];
+    }
+
+    // Parse time
+    let hours = 9, minutes = 0;
+    const timeMatch = timeStr.match(/(\d{1,2})\s*[시:]\s*(\d{0,2})/);
+    if (timeMatch) {
+      hours = parseInt(timeMatch[1]);
+      minutes = timeMatch[2] ? parseInt(timeMatch[2]) : 0;
+    } else {
+      const simpleTime = timeStr.match(/(\d{1,2}):(\d{2})/);
+      if (simpleTime) {
+        hours = parseInt(simpleTime[1]);
+        minutes = parseInt(simpleTime[2]);
+      }
+    }
+    if (/오후|pm/i.test(timeStr) && hours < 12) hours += 12;
+
+    const fullScheduledAt = `${scheduledAt}T${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00`;
+
+    // Determine type from content
+    let type = "other";
+    if (/병원|진료|doctor|hospital|클리닉/i.test(content)) type = "hospital";
+    else if (/약국|pharmacy/i.test(content)) type = "pharmacy";
+    else if (/ADHC|데이케어|daycare/i.test(content)) type = "adhc";
+
+    const row = {
+      elder_id: elderId,
+      title: content,
+      type,
+      location: "",
+      scheduled_at: fullScheduledAt,
+      notes: "",
+      source: "ello_ai",
+      status: "upcoming",
+    };
+
+    console.log("[tool:reminder] Inserting to appointments:", JSON.stringify(row));
+    const { data, error } = await supabase.from("appointments").insert(row).select();
+    if (error) {
+      console.error("[tool:reminder] INSERT ERROR:", error.message);
+      return JSON.stringify({ saved: false, error: error.message });
+    }
+    console.log(`[tool:reminder] Saved appointment: id=${data?.[0]?.id}`);
+    return JSON.stringify({ saved: true, date: scheduledAt, time: `${hours}:${String(minutes).padStart(2, "0")}`, content });
+  } catch (err) {
+    console.error("[tool:reminder] Error:", err);
+    return JSON.stringify({ saved: false, error: String(err) });
+  }
 }
 
 async function executeAlertFamily(message: string, urgency: string): Promise<string> {
@@ -462,7 +533,7 @@ async function executeTool(name: string, input: Record<string, string>, defaultC
     case "search_news":
       return executeSearchNews(input.query || "news", input.language);
     case "set_reminder":
-      return executeSetReminder(input.date, input.time || "", input.content);
+      return executeSetReminder(input.date, input.time || "", input.content, elderId);
     case "alert_family":
       return executeAlertFamily(input.message, input.urgency || "medium");
     case "find_nearby":
