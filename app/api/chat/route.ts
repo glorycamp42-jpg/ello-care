@@ -19,6 +19,17 @@ function getSupabaseAdmin(): SupabaseClient | null {
   return _supabaseAdmin;
 }
 
+/* ── TotalMedix Supabase Client (cross-project sync) ── */
+let _totalmedixAdmin: SupabaseClient | null = null;
+function getTotalmedixAdmin(): SupabaseClient | null {
+  if (_totalmedixAdmin) return _totalmedixAdmin;
+  const url = process.env.TOTALMEDIX_SUPABASE_URL;
+  const key = process.env.TOTALMEDIX_SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  _totalmedixAdmin = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+  return _totalmedixAdmin;
+}
+
 /* ── Language-neutral base prompt ── */
 const BASE_RULES = `You are a warm, caring AI companion for elderly users. You genuinely care about them.
 
@@ -358,6 +369,8 @@ async function executeSetReminder(date: string, time: string, content: string, e
       return JSON.stringify({ saved: false, error: error.message });
     }
     console.log(`[tool:reminder] Saved appointment: id=${data?.[0]?.id}`);
+    // TotalMedix 동기화
+    if (data?.[0]) syncAppointmentToTotalmedix(data[0], elderId).catch(e => console.error("[appointment-sync] error:", e));
     return JSON.stringify({ saved: true, date: scheduledAt, time: `${hours}:${String(minutes).padStart(2, "0")}`, content });
   } catch (err) {
     console.error("[tool:reminder] Error:", err);
@@ -617,11 +630,117 @@ async function saveAppointments(appointments: ParsedAppointment[], elderId: stri
     } else if (data && data.length > 0) {
       console.log(`[appointment] DB 저장 성공: id=${data[0].id}, title=${apt.title}`);
       saved = true;
+      // TotalMedix 동기화 (비동기)
+      syncAppointmentToTotalmedix(data[0], elderId).catch(e => console.error("[appointment-sync] error:", e));
     } else {
       console.error("[appointment] INSERT returned no data and no error - RLS might be blocking");
     }
   }
   return saved;
+}
+
+/* ── Sync appointment to TotalMedix ── */
+async function syncAppointmentToTotalmedix(appointment: Record<string, unknown>, elderId: string) {
+  const tm = getTotalmedixAdmin();
+  if (!tm) { console.log("[appointment-sync] TotalMedix client not configured"); return; }
+
+  // participant_ello_link에서 participant_id 찾기
+  const { data: link } = await tm
+    .from("participant_ello_link")
+    .select("participant_id")
+    .eq("ello_user_id", elderId)
+    .eq("status", "active")
+    .single();
+
+  if (!link) { console.log("[appointment-sync] No TotalMedix link for", elderId); return; }
+
+  const { error } = await tm.from("ello_appointments").upsert({
+    participant_id: link.participant_id,
+    ello_user_id: elderId,
+    ello_appointment_id: appointment.id,
+    title: appointment.title,
+    type: appointment.type,
+    location: appointment.location,
+    scheduled_at: appointment.scheduled_at,
+    notes: appointment.notes,
+    source: appointment.source,
+    status: appointment.status,
+  }, { onConflict: "ello_appointment_id" });
+
+  if (error) {
+    console.error("[appointment-sync] TotalMedix insert error:", error.message);
+  } else {
+    console.log(`[appointment-sync] Synced to TotalMedix: participant=${link.participant_id}, title=${appointment.title}`);
+  }
+}
+
+/* ── Mood Sync to TotalMedix (direct, no self-fetch) ── */
+async function triggerMoodSync(elderId: string) {
+  if (elderId === "default") return;
+  const elloDb = getSupabaseAdmin();
+  const tm = getTotalmedixAdmin();
+  if (!elloDb || !tm) { console.log("[mood-sync] DB clients not available"); return; }
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) { console.log("[mood-sync] No API key"); return; }
+
+  // 1. 오늘 대화 가져오기
+  const today = new Date().toISOString().split("T")[0];
+  const { data: conversations } = await elloDb
+    .from("conversations")
+    .select("role, content, created_at")
+    .eq("elder_id", elderId)
+    .gte("created_at", today + "T00:00:00")
+    .order("created_at", { ascending: true });
+
+  if (!conversations || conversations.length === 0) { console.log("[mood-sync] 오늘 대화 없음"); return; }
+
+  // 2. Claude 감정 분석
+  const chatLog = conversations.map(c => `${c.role}: ${c.content}`).join("\n");
+  const analysisRes = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 300,
+      messages: [{ role: "user", content: `다음 대화의 감정을 분석해. JSON만 응답:\n{"mood_score":(1-10),"alert_level":"normal|caution|urgent","topics":["주제"],"summary":"한줄요약"}\n\n${chatLog}` }],
+    }),
+  });
+
+  if (!analysisRes.ok) { console.error("[mood-sync] Claude API failed:", analysisRes.status); return; }
+  const analysisData = await analysisRes.json();
+  const responseText = analysisData.content?.[0]?.text || "";
+  const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) { console.error("[mood-sync] JSON parse failed"); return; }
+  const moodData = JSON.parse(jsonMatch[0]);
+
+  // 3. participant_id 찾기
+  const { data: link } = await tm
+    .from("participant_ello_link")
+    .select("participant_id")
+    .eq("ello_user_id", elderId)
+    .eq("status", "active")
+    .single();
+
+  if (!link) { console.log("[mood-sync] No TotalMedix link for", elderId); return; }
+
+  // 4. ello_mood_summary에 저장
+  const { error } = await tm.from("ello_mood_summary").upsert({
+    ello_user_id: elderId,
+    participant_id: link.participant_id,
+    date: today,
+    mood_score: moodData.mood_score,
+    topics: moodData.topics,
+    alert_level: moodData.alert_level,
+    summary: moodData.summary,
+    conversation_count: conversations.filter(c => c.role === "user").length,
+  }, { onConflict: "ello_user_id,date" });
+
+  if (error) {
+    console.error("[mood-sync] Save error:", error.message);
+  } else {
+    console.log(`[mood-sync] Synced: participant=${link.participant_id}, mood=${moodData.mood_score}, alert=${moodData.alert_level}`);
+  }
 }
 
 /* ── Save conversation to DB ── */
@@ -959,6 +1078,7 @@ AI응답: ${rawText}`,
                   const text = cleanText || rawText;
                   await saveConversation(elderId, "user", lastUserMsg);
                   await saveConversation(elderId, "assistant", text);
+                  triggerMoodSync(elderId).catch(e => console.error('[mood-sync] error:', e));
                   return NextResponse.json({ text, appointmentSaved: extractSaved });
                 }
               } catch {
@@ -980,18 +1100,8 @@ AI응답: ${rawText}`,
     await saveConversation(elderId, "user", lastUserMsg);
     await saveConversation(elderId, "assistant", text);
 
-    // Mood sync to totalmedix (비동기, 응답 지연 없음)
-    try {
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL
-        || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
-      console.log('[mood-sync] baseUrl:', baseUrl, 'elderId:', elderId);
-      fetch(`${baseUrl}/api/mood-sync`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ elderId }),
-      }).then(res => res.json().then(data => console.log('[mood-sync] result:', JSON.stringify(data))))
-        .catch(err => console.error('[mood-sync] trigger failed:', err));
-    } catch (e) { console.error('[mood-sync] error:', e); }
+    // Mood sync to totalmedix (직접 호출, 비동기)
+    triggerMoodSync(elderId).catch(e => console.error('[mood-sync] error:', e));
 
     return NextResponse.json({ text, appointmentSaved: didSave, _debug: { elderId, hasKeywords: /병원|약국|예약|약속/i.test(lastUserMsg), inlineBlocks: appointments.length } });
 
