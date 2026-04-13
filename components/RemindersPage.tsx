@@ -31,28 +31,21 @@ export default function RemindersPage({ onClose }: RemindersPageProps) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    // Try multiple methods to get userId
+    // localStorage first (most reliable), then session
+    const stored = localStorage.getItem("ello-userId");
+    if (stored && stored !== "default") {
+      console.log("[reminders] userId from localStorage:", stored);
+      fetchAppointments(stored);
+      return;
+    }
     const sb = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     );
     sb.auth.getSession().then(({ data: { session } }) => {
-      let uid = session?.user?.id;
-      if (!uid) {
-        // Fallback: try getUser
-        sb.auth.getUser().then(({ data: { user } }) => {
-          uid = user?.id;
-          if (!uid) {
-            // Fallback: localStorage
-            uid = localStorage.getItem("ello-userId") || "default";
-          }
-          console.log("[reminders] userId resolved:", uid, "(from:", user ? "getUser" : "localStorage", ")");
-          fetchAppointments(uid);
-        });
-      } else {
-        console.log("[reminders] userId resolved:", uid, "(from getSession)");
-        fetchAppointments(uid);
-      }
+      const uid = session?.user?.id || "default";
+      console.log("[reminders] userId from session:", uid);
+      fetchAppointments(uid);
     });
   }, []);
 
