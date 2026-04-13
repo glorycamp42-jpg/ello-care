@@ -612,7 +612,31 @@ export async function POST(req: NextRequest) {
 
     // Load saved memories for this elder
     let memorySummary = "";
-    const elderId = body.userId || "default";
+    // userId: 클라이언트에서 보낸 것 사용, "default"이면 서버에서 쿠키 세션으로 재확인
+    let elderId = body.userId || "default";
+    if (elderId === "default") {
+      try {
+        const adminDb = getSupabaseAdmin();
+        if (adminDb) {
+          // 쿠키에서 access_token 추출
+          const cookies = req.headers.get('cookie') || '';
+          const tokenMatch = cookies.match(/sb-[^=]+-auth-token[^=]*=([^;]+)/);
+          if (tokenMatch) {
+            try {
+              const parsed = JSON.parse(decodeURIComponent(tokenMatch[1]));
+              const accessToken = Array.isArray(parsed) ? parsed[0] : parsed?.access_token;
+              if (accessToken) {
+                const { data: { user } } = await adminDb.auth.getUser(accessToken);
+                if (user?.id) {
+                  elderId = user.id;
+                  console.log(`[chat] Recovered userId from cookie: ${elderId}`);
+                }
+              }
+            } catch { console.log('[chat] Cookie token parse failed'); }
+          }
+        }
+      } catch { console.log('[chat] Cookie auth fallback failed'); }
+    }
     if (elderId !== "default") {
       const adminDb = getSupabaseAdmin();
       if (adminDb) {
