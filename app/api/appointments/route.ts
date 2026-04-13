@@ -45,6 +45,13 @@ export async function GET(req: NextRequest) {
   if (!admin) return NextResponse.json({ appointments: [] });
 
   const userId = req.nextUrl.searchParams.get("userId") || "default";
+
+  // "default"이면 빈 배열 반환 (UUID 에러 방지)
+  if (userId === "default") {
+    console.log("[appointments] GET: userId is default, returning empty");
+    return NextResponse.json({ appointments: [] });
+  }
+
   const elderId = await resolveElderId(admin, userId);
 
   console.log(`[appointments] GET: userId=${userId}, resolved elderId=${elderId}`);

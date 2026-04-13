@@ -71,17 +71,27 @@ export default function LoginPage() {
       }
 
       // verifyOtp로 세션 생성
-      const { error: verifyError } = await supabase.auth.verifyOtp({
+      const { data: otpData, error: verifyError } = await supabase.auth.verifyOtp({
         email: data.email,
         token: data.token,
         type: 'magiclink',
       })
 
       if (verifyError) {
+        console.error('[pin-login] verifyOtp error:', verifyError.message)
         setPinError('로그인 처리 중 오류가 발생했습니다')
         setPinLoading(false)
         return
       }
+
+      console.log('[pin-login] verifyOtp success, session:', !!otpData.session, 'user:', otpData.user?.id)
+
+      // 세션이 쿠키에 저장될 때까지 잠시 대기
+      await new Promise(resolve => setTimeout(resolve, 500))
+
+      // 세션 확인
+      const { data: { session } } = await supabase.auth.getSession()
+      console.log('[pin-login] session check:', !!session, 'userId:', session?.user?.id)
 
       window.location.href = '/'
     } catch {

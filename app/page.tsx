@@ -100,24 +100,29 @@ export default function Home() {
     // Get current user ID for appointment saving
     try {
       const sb = createClient();
-      // Try getUser first (validates with server), fallback to getSession
-      sb.auth.getUser().then(({ data: { user }, error }) => {
+      const tryGetUser = async (attempt = 1): Promise<void> => {
+        console.log(`[auth] Attempt ${attempt} to get user...`);
+        const { data: { session } } = await sb.auth.getSession();
+        if (session?.user?.id) {
+          setUserId(session.user.id);
+          console.log("[auth] User ID from getSession:", session.user.id, "email:", session.user.email);
+          return;
+        }
+        const { data: { user } } = await sb.auth.getUser();
         if (user?.id) {
           setUserId(user.id);
-          console.log("[auth] User ID from getUser:", user.id, "email:", user.email);
-        } else {
-          console.log("[auth] getUser failed:", error?.message, "— trying getSession...");
-          sb.auth.getSession().then(({ data: { session } }) => {
-            if (session?.user?.id) {
-              setUserId(session.user.id);
-              console.log("[auth] User ID from getSession:", session.user.id);
-            } else {
-              console.log("[auth] No session found, redirecting to /login");
-              window.location.href = "/login";
-            }
-          });
+          console.log("[auth] User ID from getUser:", user.id);
+          return;
         }
-      });
+        // 재시도 (PIN 로그인 후 세션 설정 지연 대비)
+        if (attempt < 3) {
+          await new Promise(r => setTimeout(r, 1000));
+          return tryGetUser(attempt + 1);
+        }
+        console.log("[auth] No session after retries, redirecting to /login");
+        window.location.href = "/login";
+      };
+      tryGetUser();
     } catch (err) {
       console.error("[auth] Failed to get user:", err);
     }
