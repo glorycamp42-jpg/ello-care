@@ -45,6 +45,29 @@ export async function GET(req: NextRequest) {
 
   if (!garden) return NextResponse.json({ error: "Failed to get garden" }, { status: 500 });
 
+  // Source of truth: sum all happiness_tickets rows for this user.
+  // This self-heals if garden_status.total_tickets was not updated (e.g. Vercel fire-and-forget kill).
+  const { data: allTickets } = await admin
+    .from("happiness_tickets")
+    .select("total_today")
+    .eq("elder_id", userId);
+  const summed = (allTickets ?? []).reduce((acc: number, t: any) => acc + (t.total_today ?? 0), 0);
+  const harvested = (garden.harvest_count ?? 0) * 60;
+  const trueTotal = Math.max(0, summed - harvested);
+
+  // If garden_status is out of sync, repair it silently
+  if (trueTotal !== garden.total_tickets) {
+    const stageCalc = getStage(trueTotal).stage;
+    await admin.from("garden_status").update({
+      total_tickets: trueTotal,
+      current_stage: stageCalc,
+      updated_at: new Date().toISOString(),
+    }).eq("elder_id", userId);
+    garden.total_tickets = trueTotal;
+    garden.current_stage = stageCalc;
+    console.log(`[tickets GET] Auto-repaired garden: summed=${summed}, harvested=${harvested}, trueTotal=${trueTotal}`);
+  }
+
   const stageInfo = getStage(garden.total_tickets);
 
   // 오늘 티켓 정보
