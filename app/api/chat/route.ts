@@ -865,6 +865,10 @@ AI응답: ${rawText}`,
           });
 
           console.log(`[chat] Extraction API response status: ${extractRes.status}`);
+          if (!extractRes.ok) {
+            const errBody = await extractRes.text();
+            console.error(`[chat] Extraction API FAILED: ${extractRes.status} ${errBody.slice(0, 200)}`);
+          }
           if (extractRes.ok) {
             const extractData = await extractRes.json();
             const extractText = extractData.content?.[0]?.text?.trim() || "";
@@ -898,7 +902,8 @@ AI응답: ${rawText}`,
     }
 
     const text = cleanText || rawText;
-    console.log(`[chat] Final response (${text.length} chars), didSave=${didSave}`);
+    const hasKeywords = /병원|약국|ADHC|진료|예약|방문|약속|appointment|doctor|pharmacy|시에|시 에|월.*일/i.test(lastUserMsg + " " + rawText);
+    console.log(`[chat] Final response (${text.length} chars), didSave=${didSave}, hasKeywords=${hasKeywords}, elderId=${elderId}`);
 
     // Save conversation to DB
     await saveConversation(elderId, "user", lastUserMsg);
@@ -917,7 +922,7 @@ AI응답: ${rawText}`,
         .catch(err => console.error('[mood-sync] trigger failed:', err));
     } catch (e) { console.error('[mood-sync] error:', e); }
 
-    return NextResponse.json({ text, appointmentSaved: didSave });
+    return NextResponse.json({ text, appointmentSaved: didSave, _debug: { elderId, hasKeywords: /병원|약국|예약|약속/i.test(lastUserMsg), inlineBlocks: appointments.length } });
 
   } catch (error) {
     console.error("[chat] Unhandled error:", error);

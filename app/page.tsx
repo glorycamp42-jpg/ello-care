@@ -541,6 +541,7 @@ function ChatUI({
         });
         console.log(`[sendMessage] Response status: ${res.status}`);
         const data = await res.json();
+        console.log(`[sendMessage] appointmentSaved: ${data.appointmentSaved}, debug:`, data._debug);
         const rawReply = data.error ? "죄송해요, 잠시 문제가 있었어요. 다시 말씀해주세요." : data.text;
 
         // Parse and save any [MEMORY:] tags
