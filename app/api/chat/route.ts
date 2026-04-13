@@ -766,11 +766,22 @@ async function triggerMoodSync(elderId: string) {
 
 /* ── Save conversation to DB ── */
 async function saveConversation(eId: string, role: string, content: string) {
-  if (eId === "default" || !content) return;
+  if (!eId || eId === "default") {
+    console.error(`[conversations] Skipping save: elderId="${eId}" is "default" or empty — user not authenticated`);
+    return;
+  }
+  // Validate Supabase Auth UUID format
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(eId)) {
+    console.error(`[conversations] Skipping save: elderId="${eId}" is not a valid UUID`);
+    return;
+  }
+  if (!content) return;
   const db = getSupabaseAdmin();
   if (!db) return;
   const { error } = await db.from("conversations").insert({ elder_id: eId, role, content });
   if (error) console.error("[conversations] Save error:", error.message);
+  else console.log(`[conversations] Saved role=${role}, elderId=${eId}`);
 }
 
 /* ── Types ── */

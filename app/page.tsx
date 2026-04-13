@@ -261,6 +261,27 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [persona, showSelect, messages.length]);
 
+  // userId가 "default"에서 실제 UUID로 바뀌면 오늘 대화 복원 재시도
+  useEffect(() => {
+    if (userId === "default" || !persona || showSelect || showLangSelect) return;
+
+    fetch(`/api/conversations?userId=${userId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        const restored = (data.messages || []).map((m: { role: string; content: string }) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        }));
+        if (restored.length > 0) {
+          console.log(`[chat] Restored ${restored.length} messages (userId resolved to ${userId})`);
+          setMessages(restored);
+          setLastAssistantText(restored[restored.length - 1]?.content || "");
+        }
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
   async function checkMorningReminders() {
     try {
       const res = await fetch("/api/memories");
@@ -564,7 +585,7 @@ function ChatUI({
         setIsLoading(false);
       }
     },
-    [input, isLoading, persona.id, messagesRef, setMessages, setInput, setIsLoading, setLastAssistantText, playTTS, tickets, checkedIn, setCheckedIn]
+    [input, isLoading, persona.id, messagesRef, setMessages, setInput, setIsLoading, setLastAssistantText, playTTS, tickets, checkedIn, setCheckedIn, userId]
   );
 
   function startWordGame() {
