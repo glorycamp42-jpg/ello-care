@@ -323,19 +323,29 @@ export default function Home() {
     return <CharacterSelect onSelect={handlePersonaSelect} initialId={persona?.id} />;
   }
   if (showTicketPage) {
-    return <HappinessGarden userId={userId} onClose={() => setShowTicketPage(false)} />;
+    return <HappinessGarden userId={userId} onClose={() => setShowTicketPage(false)} langCode={lang?.code || getSavedLang().code} />;
   }
   if (showReminders) {
-    return <RemindersPage onClose={() => setShowReminders(false)} userId={userId} />;
+    return <RemindersPage onClose={() => setShowReminders(false)} userId={userId} langCode={lang?.code || getSavedLang().code} />;
   }
   if (showBible) {
+    const currentLang = lang || getSavedLang();
     return <BiblePage
       onClose={() => setShowBible(false)}
+      langCode={currentLang.code}
       onComplete={() => {
         tickets.earn("checkin"); // +2 for completing Bible reading
         tickets.earn("chat");   // +1 bonus
         setShowBible(false);
-        const msg = "오늘 말씀 다 읽으셨어요! 은혜로운 하루 되세요.";
+        const completeMsgs: Record<string, string> = {
+          ko: "오늘 말씀 다 읽으셨어요! 은혜로운 하루 되세요.",
+          en: "You finished today's reading! Have a blessed day.",
+          es: "¡Terminaste la lectura de hoy! Que tengas un día bendecido.",
+          zh: "你完成了今天的阅读!祝你有蒙福的一天。",
+          vi: "Bạn đã đọc xong hôm nay! Chúc một ngày được phước.",
+          ja: "今日の御言葉を読み終えました!恵みある一日を。",
+        };
+        const msg = completeMsgs[currentLang.code] || completeMsgs.ko;
         setMessages((prev) => [...prev, { role: "assistant", content: msg }]);
         setLastAssistantText(msg);
         playTTS(msg);
@@ -343,7 +353,7 @@ export default function Home() {
     />;
   }
   if (showSafety) {
-    return <SafetyPage onClose={() => setShowSafety(false)} />;
+    return <SafetyPage onClose={() => setShowSafety(false)} langCode={lang?.code || getSavedLang().code} />;
   }
 
   /* ── Helpers ── */

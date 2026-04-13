@@ -674,18 +674,94 @@ async function syncAppointmentToTotalmedix(appointment: Record<string, unknown>,
   }
 }
 
-/* ── Happiness Ticket Grant (internal, no self-fetch) ── */
+/* ── Happiness Ticket Grant (direct DB, no self-fetch) ── */
 async function grantTicket(elderId: string, type: string, moodScore?: number) {
   if (elderId === "default") return;
+  const admin = getSupabaseAdmin();
+  if (!admin) { console.error("[ticket] No DB client"); return; }
+
   try {
-    const baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000";
-    const res = await fetch(`${baseUrl}/api/tickets`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: elderId, type, moodScore }),
-    });
-    const data = await res.json();
-    console.log(`[ticket] ${type} grant:`, JSON.stringify(data));
+    const today = new Date().toISOString().split("T")[0];
+
+    // garden_status 가져오기 (없으면 생성)
+    let { data: garden } = await admin
+      .from("garden_status").select("*").eq("elder_id", elderId).single();
+    if (!garden) {
+      const { data: ng } = await admin
+        .from("garden_status").insert({ elder_id: elderId }).select().single();
+      garden = ng;
+    }
+    if (!garden) { console.error("[ticket] Failed to get garden"); return; }
+
+    // 오늘 티켓 레코드 가져오기 (없으면 생성)
+    let { data: ticket } = await admin
+      .from("happiness_tickets").select("*").eq("elder_id", elderId).eq("date", today).single();
+    if (!ticket) {
+      const { data: nt } = await admin
+        .from("happiness_tickets").insert({ elder_id: elderId, date: today }).select().single();
+      ticket = nt;
+    }
+    if (!ticket) { console.error("[ticket] Failed to get ticket"); return; }
+
+    let ticketsAdded = 0;
+
+    if (type === "chat" && !ticket.daily_chat) {
+      ticket.daily_chat = true;
+      ticketsAdded += 1;
+
+      // 연속 기록 계산
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split("T")[0];
+
+      let newStreak = 1;
+      if (garden.last_chat_date === yesterdayStr) {
+        newStreak = garden.streak_days + 1;
+      } else if (garden.last_chat_date === today) {
+        newStreak = garden.streak_days;
+      }
+
+      if (newStreak > 0 && newStreak % 7 === 0) {
+        ticket.streak_bonus += 3;
+        ticketsAdded += 3;
+      }
+
+      await admin.from("garden_status").update({
+        streak_days: newStreak, last_chat_date: today, updated_at: new Date().toISOString(),
+      }).eq("elder_id", elderId);
+
+      garden.streak_days = newStreak;
+    }
+
+    if (type === "mood" && moodScore && moodScore >= 7 && !ticket.mood_bonus) {
+      ticket.mood_bonus = true;
+      ticketsAdded += 1;
+    }
+
+    if (type === "appointment") {
+      ticket.appointment_bonus += 1;
+      ticketsAdded += 1;
+    }
+
+    if (ticketsAdded > 0) {
+      ticket.total_today = (ticket.daily_chat ? 1 : 0) + (ticket.mood_bonus ? 1 : 0) + ticket.streak_bonus + ticket.appointment_bonus;
+
+      await admin.from("happiness_tickets").update({
+        daily_chat: ticket.daily_chat, mood_bonus: ticket.mood_bonus,
+        streak_bonus: ticket.streak_bonus, appointment_bonus: ticket.appointment_bonus,
+        total_today: ticket.total_today,
+      }).eq("id", ticket.id);
+
+      const newTotal = garden.total_tickets + ticketsAdded;
+      const stageCalc = newTotal >= 60 ? 5 : newTotal >= 40 ? 4 : newTotal >= 25 ? 3 : newTotal >= 10 ? 2 : 1;
+      await admin.from("garden_status").update({
+        total_tickets: newTotal, current_stage: stageCalc, updated_at: new Date().toISOString(),
+      }).eq("elder_id", elderId);
+
+      console.log(`[ticket] ${type} granted: +${ticketsAdded}, total=${newTotal}, stage=${stageCalc}`);
+    } else {
+      console.log(`[ticket] ${type}: no new tickets (already granted today)`);
+    }
   } catch (e) {
     console.error("[ticket] grant failed:", e);
   }
