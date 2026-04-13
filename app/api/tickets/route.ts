@@ -51,7 +51,8 @@ export async function GET(req: NextRequest) {
     .from("happiness_tickets")
     .select("total_today")
     .eq("elder_id", userId);
-  const summed = (allTickets ?? []).reduce((acc: number, t: any) => acc + (t.total_today ?? 0), 0);
+  const ticketRows = (allTickets ?? []) as Array<{ total_today: number | null }>;
+  const summed = ticketRows.reduce((acc, t) => acc + (t.total_today ?? 0), 0);
   const harvested = (garden.harvest_count ?? 0) * 60;
   const trueTotal = Math.max(0, summed - harvested);
 

@@ -755,7 +755,8 @@ async function grantTicket(elderId: string, type: string, moodScore?: number) {
       // Re-read garden_status fresh to avoid race conditions with concurrent requests
       const { data: freshGarden } = await admin
         .from("garden_status").select("total_tickets").eq("elder_id", elderId).single();
-      const baseTotal = freshGarden?.total_tickets ?? garden.total_tickets ?? 0;
+      const fg = freshGarden as { total_tickets: number } | null;
+      const baseTotal = fg?.total_tickets ?? garden.total_tickets ?? 0;
       const newTotal = baseTotal + ticketsAdded;
       const stageCalc = newTotal >= 60 ? 5 : newTotal >= 40 ? 4 : newTotal >= 25 ? 3 : newTotal >= 10 ? 2 : 1;
       await admin.from("garden_status").update({
