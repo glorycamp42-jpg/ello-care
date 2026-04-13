@@ -73,7 +73,7 @@ export default function LoginPage() {
       // verifyOtp로 세션 생성
       const { error: verifyError } = await supabase.auth.verifyOtp({
         email: data.email,
-        token_hash: data.token_hash,
+        token: data.token,
         type: 'magiclink',
       })
 

@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       email: elderEmail,
-      token_hash: linkData.properties?.hashed_token,
+      token: linkData.properties?.email_otp,
       name: participantName,
     })
   } catch (error) {
