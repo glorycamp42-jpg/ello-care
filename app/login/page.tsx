@@ -86,12 +86,12 @@ export default function LoginPage() {
 
       console.log('[pin-login] verifyOtp success, session:', !!otpData.session, 'user:', otpData.user?.id)
 
-      // 세션이 쿠키에 저장될 때까지 잠시 대기
-      await new Promise(resolve => setTimeout(resolve, 500))
-
-      // 세션 확인
-      const { data: { session } } = await supabase.auth.getSession()
-      console.log('[pin-login] session check:', !!session, 'userId:', session?.user?.id)
+      // userId를 localStorage에 백업 저장 (세션 복구 실패 대비)
+      const finalUserId = otpData.user?.id || data.userId
+      if (finalUserId) {
+        localStorage.setItem('ello-userId', finalUserId)
+        console.log('[pin-login] userId saved to localStorage:', finalUserId)
+      }
 
       window.location.href = '/'
     } catch {

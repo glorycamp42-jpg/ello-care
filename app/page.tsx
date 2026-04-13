@@ -119,6 +119,13 @@ export default function Home() {
           await new Promise(r => setTimeout(r, 1000));
           return tryGetUser(attempt + 1);
         }
+        // 최후의 fallback: localStorage에서 userId 복구
+        const savedId = localStorage.getItem('ello-userId');
+        if (savedId) {
+          setUserId(savedId);
+          console.log("[auth] Recovered userId from localStorage:", savedId);
+          return;
+        }
         console.log("[auth] No session after retries, redirecting to /login");
         window.location.href = "/login";
       };

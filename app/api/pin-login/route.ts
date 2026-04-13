@@ -80,6 +80,7 @@ export async function POST(req: NextRequest) {
       email: elderEmail,
       token: linkData.properties?.email_otp,
       name: participantName,
+      userId: elloUser.id,
     })
   } catch (error) {
     console.error('PIN login error:', error)

@@ -527,7 +527,7 @@ async function saveAppointments(appointments: ParsedAppointment[], elderId: stri
     const row = {
       elder_id: elderId,
       title: apt.title,
-      type: apt.type || "general",
+      type: ["hospital", "adhc", "pharmacy", "other"].includes(apt.type) ? apt.type : "other",
       location: apt.location || "",
       scheduled_at: cleanTime,
       notes: apt.notes || "",
@@ -843,7 +843,7 @@ When using tools, always present the results naturally in your designated langua
               "anthropic-version": "2023-06-01",
             },
             body: JSON.stringify({
-              model: "claude-haiku-4-5-20251001",
+              model: "claude-sonnet-4-20250514",
               max_tokens: 300,
               messages: [{
                 role: "user",
@@ -863,6 +863,7 @@ AI응답: ${rawText}`,
             }),
           });
 
+          console.log(`[chat] Extraction API response status: ${extractRes.status}`);
           if (extractRes.ok) {
             const extractData = await extractRes.json();
             const extractText = extractData.content?.[0]?.text?.trim() || "";
