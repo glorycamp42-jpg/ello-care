@@ -820,8 +820,8 @@ function ChatUI({
       {/* ── Bottom Tab Navigation ── */}
       <nav className="bg-cream border-t border-warm-gray-light/15 px-2 pt-1.5 pb-4">
         <div className="flex items-center justify-around">
-          {/* 홈 */}
-          <button onClick={onShowTickets} className="flex flex-col items-center gap-0.5 min-w-[56px] py-1 text-coral">
+          {/* 홈 - 첫 페이지(캐릭터 선택)로 이동 */}
+          <button onClick={onChangeCharacter} className="flex flex-col items-center gap-0.5 min-w-[56px] py-1 text-warm-gray-light">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
               <polyline points="9 22 9 12 15 12 15 22" />
