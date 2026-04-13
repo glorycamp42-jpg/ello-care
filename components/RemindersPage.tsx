@@ -31,12 +31,28 @@ export default function RemindersPage({ onClose }: RemindersPageProps) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
+    // Try multiple methods to get userId
     const sb = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     );
     sb.auth.getSession().then(({ data: { session } }) => {
-      fetchAppointments(session?.user?.id || "default");
+      let uid = session?.user?.id;
+      if (!uid) {
+        // Fallback: try getUser
+        sb.auth.getUser().then(({ data: { user } }) => {
+          uid = user?.id;
+          if (!uid) {
+            // Fallback: localStorage
+            uid = localStorage.getItem("ello-userId") || "default";
+          }
+          console.log("[reminders] userId resolved:", uid, "(from:", user ? "getUser" : "localStorage", ")");
+          fetchAppointments(uid);
+        });
+      } else {
+        console.log("[reminders] userId resolved:", uid, "(from getSession)");
+        fetchAppointments(uid);
+      }
     });
   }, []);
 
