@@ -532,6 +532,7 @@ async function saveAppointments(appointments: ParsedAppointment[], elderId: stri
       scheduled_at: cleanTime,
       notes: apt.notes || "",
       source: "ello_ai",
+      status: "upcoming",
     };
     console.log("[appointment] insert attempt:", JSON.stringify(row));
     const { data, error } = await supabase.from("appointments").insert(row).select();
