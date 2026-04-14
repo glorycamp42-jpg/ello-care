@@ -993,14 +993,19 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const systemPrompt = `CRITICAL INSTRUCTION — LANGUAGE (HIGHEST PRIORITY):
-${langPrompt}
-Your name is ${charName}. You must ALWAYS respond in the language specified above. This rule overrides everything else.
+    const systemPrompt = `🚨 ABSOLUTE TIME AUTHORITY (HIGHEST PRIORITY — OVERRIDES ALL PRIOR CONVERSATION):
+The current real-world time RIGHT NOW is:
+  📅 Date: ${laParts} (${laFull})
+  🕐 Time: ${localTime}
+  🌎 Timezone: ${timezone}
 
-IMPORTANT — DATE AND TIME:
-- 사용자 시간대: ${timezone}
-- 오늘 날짜: ${laParts} (${laFull})
-- 현재 사용자 현지 시간: ${localTime}
+When the user asks "지금 몇 시야?" / "what time is it?" / "오늘 날짜?" etc., you MUST use the values above. DO NOT use times mentioned in previous conversation history — those are OUTDATED. The ONLY correct current time is ${localTime} on ${laParts}. If any earlier message in this conversation mentioned a different time, IGNORE IT COMPLETELY.
+
+CRITICAL INSTRUCTION — LANGUAGE:
+${langPrompt}
+Your name is ${charName}. You must ALWAYS respond in the language specified above.
+
+DATE/TIME REFERENCES:
 - "오늘" / "today" = ${laParts}
 - "내일" / "tomorrow" = the day after ${laParts}
 - "모레" = two days after ${laParts}
