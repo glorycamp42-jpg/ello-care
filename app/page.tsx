@@ -32,9 +32,9 @@ interface SpeechRecognition extends EventTarget {
   onend: (() => void) | null;
   start(): void; stop(): void;
 }
-interface SpeechRecognitionResultEvent extends Event { results: SpeechRecognitionResultList; }
+interface SpeechRecognitionResultEvent extends Event { results: SpeechRecognitionResultList; resultIndex: number; }
 interface SpeechRecognitionResultList { [i: number]: SpeechRecognitionResult; length: number; }
-interface SpeechRecognitionResult { [i: number]: SpeechRecognitionAlternative; length: number; }
+interface SpeechRecognitionResult { [i: number]: SpeechRecognitionAlternative; length: number; isFinal: boolean; }
 interface SpeechRecognitionAlternative { transcript: string; confidence: number; }
 
 interface Message {
@@ -365,7 +365,12 @@ export default function Home() {
     if (typeof window === "undefined") return null;
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return null;
-    const r = new SR(); r.lang = "ko-KR"; r.continuous = false; r.interimResults = false;
+    const r = new SR();
+    r.lang = "ko-KR";
+    // Keep listening through pauses — elderly users speak slowly with breaths
+    r.continuous = true;
+    // Show interim results so user sees they're being heard
+    r.interimResults = true;
     return r;
   }
 
@@ -650,15 +655,86 @@ function ChatUI({
     } catch (err) { console.error("[image] Failed:", err); }
   }
 
+  // Refs for accumulated transcript and silence timeout used during listening
+  const accumulatedTranscriptRef = useRef<string>("");
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const SILENCE_MS = 2800; // how long to wait after user stops speaking before auto-sending
+
   const toggleListening = useCallback(() => {
-    if (isListening) { recognitionRef.current?.stop(); setIsListening(false); return; }
+    // If already listening: stop + send whatever has been accumulated
+    if (isListening) {
+      if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      const finalText = accumulatedTranscriptRef.current.trim();
+      accumulatedTranscriptRef.current = "";
+      if (finalText) {
+        setInput(finalText);
+        setTimeout(() => sendMessage(finalText), 150);
+      }
+      return;
+    }
+
+    // Start a fresh listening session
     const r = createRecognition();
     if (!r) { alert("음성 인식이 지원되지 않습니다. Chrome을 사용해주세요."); return; }
     recognitionRef.current = r;
-    r.onresult = (ev) => { const t = ev.results[0][0].transcript; setInput(t); setTimeout(() => sendMessage(t), 300); };
-    r.onerror = () => setIsListening(false);
-    r.onend = () => setIsListening(false);
-    r.start(); setIsListening(true);
+    accumulatedTranscriptRef.current = "";
+
+    // Helper: (re)schedule the auto-send that fires after user has stopped talking
+    const scheduleAutoSend = () => {
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = setTimeout(() => {
+        silenceTimerRef.current = null;
+        try { recognitionRef.current?.stop(); } catch {}
+        const finalText = accumulatedTranscriptRef.current.trim();
+        accumulatedTranscriptRef.current = "";
+        setIsListening(false);
+        if (finalText) {
+          setInput(finalText);
+          sendMessage(finalText);
+        }
+      }, SILENCE_MS);
+    };
+
+    r.onresult = (ev) => {
+      // Walk through new results since last index; append finalized ones, show interim in input
+      let interim = "";
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const res = ev.results[i];
+        const transcript = res[0]?.transcript || "";
+        if (res.isFinal) {
+          accumulatedTranscriptRef.current = (accumulatedTranscriptRef.current + " " + transcript).trim();
+        } else {
+          interim += transcript;
+        }
+      }
+      setInput((accumulatedTranscriptRef.current + " " + interim).trim());
+      // Any new speech activity → restart the silence countdown
+      scheduleAutoSend();
+    };
+
+    r.onerror = () => {
+      if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
+      setIsListening(false);
+    };
+
+    // onend can fire due to browser's internal timeout even with continuous=true.
+    // If it fires, send whatever we've captured so far.
+    r.onend = () => {
+      if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
+      setIsListening(false);
+      const finalText = accumulatedTranscriptRef.current.trim();
+      accumulatedTranscriptRef.current = "";
+      if (finalText) {
+        setInput(finalText);
+        sendMessage(finalText);
+      }
+    };
+
+    r.start();
+    setIsListening(true);
+    scheduleAutoSend(); // seed the timer so long silence from the start also terminates
   }, [isListening, sendMessage, recognitionRef, setIsListening, setInput, createRecognition]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
