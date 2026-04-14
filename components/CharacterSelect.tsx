@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { getSavedLang, LangCode } from "@/lib/i18n";
+import CharacterAvatar from "@/components/CharacterAvatar";
 
 /* ── Character persona definitions ── */
 export interface Persona {
@@ -175,8 +176,8 @@ export default function CharacterSelect({ onSelect, initialId }: CharacterSelect
                   </div>
                 )}
 
-                {/* Emoji */}
-                <span className="text-[40px] leading-none">{p.emoji}</span>
+                {/* Character image */}
+                <CharacterAvatar personaId={p.id} size={72} />
 
                 {/* Translated Name */}
                 <span className="text-warm-brown font-bold text-[15px] mt-3">{t.name}</span>

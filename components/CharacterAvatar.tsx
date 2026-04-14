@@ -1,10 +1,11 @@
 "use client";
 
+// v2: updated with new realistic watercolor-style character images (Firefly AI)
 const CHARACTER_IMAGES: Record<string, string> = {
-  granddaughter: "/characters/grandchild.png",
-  oldfriend: "/characters/friend.png",
-  church: "/characters/church.png",
-  assistant: "/characters/secretary.png",
+  granddaughter: "/characters/grandchild.png?v=2",
+  oldfriend: "/characters/friend.png?v=2",
+  church: "/characters/church.png?v=2",
+  assistant: "/characters/secretary.png?v=2",
 };
 
 interface CharacterAvatarProps {
