@@ -552,7 +552,9 @@ function ChatUI({
       setIsLoading(true);
 
       try {
-        console.log(`[sendMessage] Fetching /api/chat with ${newMsgs.length} messages, userId=${userId}`);
+        const clientTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const clientNow = new Date().toString();
+        console.log(`[sendMessage] Fetching /api/chat with ${newMsgs.length} messages, userId=${userId}, tz=${clientTz}, now=${clientNow}`);
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -643,6 +645,7 @@ function ChatUI({
             charName: lang.charName,
             userCity,
             userId,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             messages: newMsgs.map((m) => ({
               role: m.role, content: m.content,
               ...(m.image ? { image: { base64: m.image.base64, mediaType: m.image.mediaType } } : {}),
