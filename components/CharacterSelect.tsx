@@ -86,7 +86,9 @@ export const PERSONAS: Persona[] = [
     greeting: "안녕하세요! 오늘도 감사한 하루 보내고 계시죠?",
     promptAddition:
       "너는 교회 친구야. 따뜻하고 신앙적인 대화를 해. 가끔 성경 말씀이나 기도 얘기도 자연스럽게 꺼내. 항상 한국어 존댓말로 대화해.",
-    voiceId: "8yL2rVx40vjDeu5pTbg6",
+    // TODO: Replace with a distinct Korean female voice from ElevenLabs.
+    // Temporarily reuses granddaughter voice so it sounds female, not male.
+    voiceId: "xi3rF0t7dg7uN2M0WUhr",
     color: "#3DA87A",
     iconBg: "#DDF3EA",
   },

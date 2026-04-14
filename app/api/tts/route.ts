@@ -39,11 +39,15 @@ export async function POST(req: NextRequest) {
         },
         body: JSON.stringify({
           text,
-          model_id: "eleven_multilingual_v2",
+          // turbo_v2_5 gives more natural Korean pronunciation with lower latency
+          model_id: "eleven_turbo_v2_5",
           voice_settings: {
-            stability: 0.4,
-            similarity_boost: 0.8,
-            style: 0.3,
+            // Higher stability = more consistent, less weird intonation jumps
+            stability: 0.55,
+            // Slightly lower to reduce robotic artifacts
+            similarity_boost: 0.75,
+            // style=0 removes accent/intonation exaggeration (main cause of unnatural Korean)
+            style: 0.0,
             use_speaker_boost: true,
           },
         }),
