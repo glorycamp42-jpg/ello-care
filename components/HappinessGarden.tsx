@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import GardenScene from "./GardenScene";
 // i18n translations are defined inline below
 
 interface GardenData {
@@ -213,14 +214,8 @@ export default function HappinessGarden({ userId, onClose, langCode = "ko" }: Pr
 
       {/* 정원 시각화 */}
       <div style={{ textAlign: "center", padding: "24px 0" }}>
-        <div style={{
-          width: 160, height: 160, margin: "0 auto", borderRadius: "50%",
-          background: `radial-gradient(circle, white 30%, ${stageVisual.bg} 100%)`,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: `0 4px 20px ${stageVisual.color}30`,
-          transition: "all 0.5s ease",
-        }}>
-          <span style={{ fontSize: 72, filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.1))" }}>{stageVisual.icon}</span>
+        <div style={{ margin: "0 auto", display: "inline-block" }}>
+          <GardenScene stage={garden.stage} size={240} />
         </div>
         <p style={{ fontSize: 20, fontWeight: 700, color: stageVisual.color, margin: "12px 0 0" }}>{stageName}</p>
         <p style={{ fontSize: 14, color: "#999", margin: "4px 0 0" }}>Stage {garden.stage}</p>
