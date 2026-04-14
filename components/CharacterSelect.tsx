@@ -17,39 +17,39 @@ export interface Persona {
   iconBg: string;
 }
 
-/* ── Translated names and samples per language ── */
-const PERSONA_I18N: Record<string, Record<LangCode, { name: string; sample: string }>> = {
+/* ── Translated names, samples, and badges per language ── */
+const PERSONA_I18N: Record<string, Record<LangCode, { name: string; sample: string; badge: string }>> = {
   granddaughter: {
-    ko: { name: "손주처럼", sample: "사랑해요 할머니!" },
-    en: { name: "Like a Grandchild", sample: "I love you, Grandma!" },
-    es: { name: "Como un nieto", sample: "¡Te quiero, abuelita!" },
-    zh: { name: "像孙子一样", sample: "奶奶我爱你！" },
-    vi: { name: "Như cháu", sample: "Con yêu bà!" },
-    ja: { name: "孫のように", sample: "おばあちゃん大好き！" },
+    ko: { name: "손주처럼", sample: "사랑해요 할머니!", badge: "AI 손녀" },
+    en: { name: "Like a Grandchild", sample: "I love you, Grandma!", badge: "AI Grandchild" },
+    es: { name: "Como un nieto", sample: "¡Te quiero, abuelita!", badge: "IA Nieta" },
+    zh: { name: "像孙子一样", sample: "奶奶我爱你！", badge: "AI 孙女" },
+    vi: { name: "Như cháu", sample: "Con yêu bà!", badge: "AI Cháu" },
+    ja: { name: "孫のように", sample: "おばあちゃん大好き！", badge: "AI 孫" },
   },
   oldfriend: {
-    ko: { name: "옛친구처럼", sample: "오랜만이야, 잘 지냈어?" },
-    en: { name: "Like an Old Friend", sample: "Long time no see! How've you been?" },
-    es: { name: "Como un viejo amigo", sample: "¡Cuánto tiempo! ¿Cómo has estado?" },
-    zh: { name: "像老朋友一样", sample: "好久不见，最近怎么样？" },
-    vi: { name: "Như bạn cũ", sample: "Lâu rồi không gặp! Dạo này sao rồi?" },
-    ja: { name: "旧友のように", sample: "久しぶり！元気だった？" },
+    ko: { name: "옛친구처럼", sample: "오랜만이야, 잘 지냈어?", badge: "AI 옛친구" },
+    en: { name: "Like an Old Friend", sample: "Long time no see! How've you been?", badge: "AI Old Friend" },
+    es: { name: "Como un viejo amigo", sample: "¡Cuánto tiempo! ¿Cómo has estado?", badge: "IA Viejo Amigo" },
+    zh: { name: "像老朋友一样", sample: "好久不见，最近怎么样？", badge: "AI 老朋友" },
+    vi: { name: "Như bạn cũ", sample: "Lâu rồi không gặp! Dạo này sao rồi?", badge: "AI Bạn Cũ" },
+    ja: { name: "旧友のように", sample: "久しぶり！元気だった？", badge: "AI 旧友" },
   },
   church: {
-    ko: { name: "교회친구처럼", sample: "오늘 말씀 들었어요?" },
-    en: { name: "Like a Church Friend", sample: "Did you hear today's sermon?" },
-    es: { name: "Como un amigo de iglesia", sample: "¿Escuchaste el sermón de hoy?" },
-    zh: { name: "像教会朋友一样", sample: "今天的讲道听了吗？" },
-    vi: { name: "Như bạn nhà thờ", sample: "Hôm nay bạn nghe bài giảng chưa?" },
-    ja: { name: "教会の友のように", sample: "今日の説教聞いた？" },
+    ko: { name: "교회친구처럼", sample: "오늘 말씀 들었어요?", badge: "AI 교회친구" },
+    en: { name: "Like a Church Friend", sample: "Did you hear today's sermon?", badge: "AI Church Friend" },
+    es: { name: "Como un amigo de iglesia", sample: "¿Escuchaste el sermón de hoy?", badge: "IA Amigo de Iglesia" },
+    zh: { name: "像教会朋友一样", sample: "今天的讲道听了吗？", badge: "AI 教会朋友" },
+    vi: { name: "Như bạn nhà thờ", sample: "Hôm nay bạn nghe bài giảng chưa?", badge: "AI Bạn Nhà Thờ" },
+    ja: { name: "教会の友のように", sample: "今日の説教聞いた？", badge: "AI 教会の友" },
   },
   assistant: {
-    ko: { name: "비서처럼", sample: "일정 도와드릴게요" },
-    en: { name: "Like an Assistant", sample: "Let me help with your schedule" },
-    es: { name: "Como un asistente", sample: "Déjame ayudarte con tu agenda" },
-    zh: { name: "像秘书一样", sample: "让我帮你安排日程" },
-    vi: { name: "Như trợ lý", sample: "Để tôi giúp bạn sắp xếp lịch" },
-    ja: { name: "秘書のように", sample: "スケジュールをお手伝いします" },
+    ko: { name: "비서처럼", sample: "일정 도와드릴게요", badge: "AI 비서" },
+    en: { name: "Like an Assistant", sample: "Let me help with your schedule", badge: "AI Assistant" },
+    es: { name: "Como un asistente", sample: "Déjame ayudarte con tu agenda", badge: "IA Asistente" },
+    zh: { name: "像秘书一样", sample: "让我帮你安排日程", badge: "AI 秘书" },
+    vi: { name: "Như trợ lý", sample: "Để tôi giúp bạn sắp xếp lịch", badge: "AI Trợ Lý" },
+    ja: { name: "秘書のように", sample: "スケジュールをお手伝いします", badge: "AI 秘書" },
   },
 };
 
@@ -108,7 +108,7 @@ export const PERSONAS: Persona[] = [
 export function getPersonaText(personaId: string, langCode: LangCode) {
   const t = PERSONA_I18N[personaId]?.[langCode];
   if (t) return t;
-  return PERSONA_I18N[personaId]?.ko || { name: personaId, sample: "" };
+  return PERSONA_I18N[personaId]?.ko || { name: personaId, sample: "", badge: "AI" };
 }
 
 /* ── Character Selection Screen ── */

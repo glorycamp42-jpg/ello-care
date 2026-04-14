@@ -300,6 +300,8 @@ export default function Home() {
   }, [messages]);
 
   function handlePersonaSelect(p: Persona) {
+    // Allow conversation to restore again when persona changes
+    restoredRef.current = false;
     setPersona(p); savePersona(p); setMessages([]); setShowSelect(false);
   }
 
@@ -728,7 +730,7 @@ function ChatUI({
             speaking={isSpeaking}
             showLabel
             label={lang.charName}
-            badge={lang.ui.aiCompanion}
+            badge={getPersonaText(persona.id, lang.code).badge}
           />
         </div>
       )}
