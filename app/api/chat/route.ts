@@ -1053,8 +1053,25 @@ When using tools, always present the results naturally in your designated langua
     });
 
     // First Claude call (may request tool use)
+    // Inject a fresh "current time anchor" right before the last user message so
+    // it overrides any stale time references in restored conversation history.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const claudeMessages: { role: string; content: any }[] = [...apiMessages];
+    const claudeMessages: { role: string; content: any }[] = [];
+    if (apiMessages.length > 0) {
+      // Put all but last message first
+      for (let i = 0; i < apiMessages.length - 1; i++) claudeMessages.push(apiMessages[i]);
+      // Insert time anchor as user+assistant pair
+      claudeMessages.push({
+        role: "user",
+        content: `[시스템 알림: 이전 대화 내용과 무관하게, 지금 실제 현재 시각은 ${laFull} ${localTime} (${timezone}) 입니다. 이전에 다른 시간을 언급했다면 그건 예전 세션이라 무시하세요.]`,
+      });
+      claudeMessages.push({
+        role: "assistant",
+        content: `네, 알겠어요. 지금은 ${localTime}이네요.`,
+      });
+      // Then the actual last user message
+      claudeMessages.push(apiMessages[apiMessages.length - 1]);
+    }
     let finalText = "";
     let attempts = 0;
     const MAX_TOOL_ROUNDS = 3;
