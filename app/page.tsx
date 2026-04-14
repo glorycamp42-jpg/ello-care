@@ -721,29 +721,25 @@ function ChatUI({
         </div>
       </header>
 
-      {/* ── Avatar section (40% height when few messages) ── */}
-      {messages.length <= 1 && (
-        <div className="flex flex-col items-center justify-center" style={{ minHeight: "40vh" }}>
-          <CharacterAvatar
-            personaId={persona.id}
-            size={160}
-            speaking={isSpeaking}
-            showLabel
-            label={lang.charName}
-            badge={getPersonaText(persona.id, lang.code).badge}
-          />
-        </div>
-      )}
+      {/* ── Persistent hero avatar (video-call style, always visible) ── */}
+      <div
+        className="flex flex-col items-center justify-center shrink-0"
+        style={{ height: "35vh", minHeight: 220 }}
+      >
+        <CharacterAvatar
+          personaId={persona.id}
+          size={180}
+          speaking={isSpeaking}
+          showLabel
+          label={lang.charName}
+          badge={getPersonaText(persona.id, lang.code).badge}
+        />
+      </div>
 
-      {/* ── Chat area ── */}
+      {/* ── Chat area (scrolls within remaining 2/3) ── */}
       <div className="flex-1 overflow-y-auto chat-scroll px-4 py-2 space-y-2">
         {messages.map((msg, i) => (
           <div key={i} className={`flex items-end gap-1.5 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-            {msg.role === "assistant" && (
-              <div className="shrink-0 mb-0.5">
-                <CharacterAvatar personaId={persona.id} size={32} speaking={isSpeaking && i === messages.length - 1} />
-              </div>
-            )}
             <div className={`max-w-[80%] px-3.5 py-2.5 text-[14px] leading-relaxed ${
               msg.role === "user"
                 ? "bg-coral text-white rounded-[18px] rounded-br-[5px] shadow-sm shadow-coral/15"
@@ -757,7 +753,6 @@ function ChatUI({
 
         {isLoading && (
           <div className="flex items-end gap-1.5 justify-start">
-            <div className="shrink-0 mb-0.5"><CharacterAvatar personaId={persona.id} size={32} /></div>
             <div className="bg-warm-white px-4 py-3 rounded-[18px] rounded-bl-[5px] shadow-sm shadow-warm-gray/8">
               <span className="inline-flex gap-1.5">
                 <span className="w-1.5 h-1.5 bg-coral/40 rounded-full animate-bounce" />
