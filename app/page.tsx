@@ -561,6 +561,14 @@ function ChatUI({
         console.log(`[sendMessage] Response status: ${res.status}`);
         const data = await res.json();
         console.log(`[sendMessage] appointmentSaved: ${data.appointmentSaved}, debug:`, data._debug);
+        if (data._debug?.ticketChat) {
+          console.log(`[ticket] chat grant result:`, data._debug.ticketChat);
+          if (data._debug.ticketChat.granted > 0) {
+            console.log(`✅ +${data._debug.ticketChat.granted} 포인트 적립됨 (total=${data._debug.ticketChat.total})`);
+          } else {
+            console.warn(`⚠️ 포인트 미적립 - reason: ${data._debug.ticketChat.reason}, elderId: ${data._debug.elderId}`);
+          }
+        }
         const rawReply = data.error ? "죄송해요, 잠시 문제가 있었어요. 다시 말씀해주세요." : data.text;
 
         // Parse and save any [MEMORY:] tags
@@ -698,18 +706,57 @@ function ChatUI({
     };
 
     r.onresult = (ev) => {
-      // Walk through new results since last index; append finalized ones, show interim in input
+      // Mobile Web Speech API quirks (especially iPhone Safari / Android Chrome):
+      //  (a) emits the SAME final transcript multiple times → "오늘 오늘 오늘 ..."
+      //  (b) emits CUMULATIVE finals where each later final contains the earlier
+      //      one as a prefix (e.g. "오늘", "오늘 예약", "오늘 예약 잡아줘")
+      //  (c) interim may repeat the already-finalized text
+      // Strategy: overlap-aware merge (superset wins, strict duplicates dropped),
+      // then strip overlap between finalText tail and interim head.
+      const allFinals: string[] = [];
       let interim = "";
-      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      for (let i = 0; i < ev.results.length; i++) {
         const res = ev.results[i];
-        const transcript = res[0]?.transcript || "";
+        const transcript = (res[0]?.transcript || "").trim();
+        if (!transcript) continue;
         if (res.isFinal) {
-          accumulatedTranscriptRef.current = (accumulatedTranscriptRef.current + " " + transcript).trim();
+          allFinals.push(transcript);
         } else {
-          interim += transcript;
+          // Keep only the latest interim (usually cumulative on mobile)
+          interim = transcript;
         }
       }
-      setInput((accumulatedTranscriptRef.current + " " + interim).trim());
+
+      // Overlap-aware merge of finals: skip duplicates/subsets, upgrade to superset, append truly new phrases
+      let finalText = "";
+      for (const t of allFinals) {
+        if (!finalText) { finalText = t; continue; }
+        if (finalText === t) continue;              // exact duplicate
+        if (finalText.includes(t)) continue;         // subset of current
+        if (t.includes(finalText)) { finalText = t; continue; } // superset — upgrade
+        finalText = finalText + " " + t;             // genuine new phrase
+      }
+
+      // Strip interim head if it overlaps with finalText tail
+      let displayInterim = interim;
+      if (finalText && displayInterim) {
+        if (displayInterim === finalText || finalText.endsWith(displayInterim)) {
+          displayInterim = "";
+        } else if (displayInterim.startsWith(finalText + " ")) {
+          displayInterim = displayInterim.slice(finalText.length + 1);
+        } else {
+          // Find longest suffix of finalText that is a prefix of interim
+          for (let len = Math.min(finalText.length, displayInterim.length); len > 0; len--) {
+            if (displayInterim.startsWith(finalText.slice(-len))) {
+              displayInterim = displayInterim.slice(len).trim();
+              break;
+            }
+          }
+        }
+      }
+
+      accumulatedTranscriptRef.current = finalText;
+      setInput((finalText + (displayInterim ? " " + displayInterim : "")).trim());
       // Any new speech activity → restart the silence countdown
       scheduleAutoSend();
     };

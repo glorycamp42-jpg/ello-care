@@ -131,7 +131,8 @@ export default function HappinessGarden({ userId, onClose, langCode = "ko" }: Pr
 
   async function fetchGarden() {
     try {
-      const res = await fetch(`/api/tickets?userId=${userId}`);
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const res = await fetch(`/api/tickets?userId=${userId}&tz=${encodeURIComponent(tz)}`);
       const data = await res.json();
       setGarden(data.garden);
       setToday(data.today);
@@ -149,7 +150,7 @@ export default function HappinessGarden({ userId, onClose, langCode = "ko" }: Pr
       const res = await fetch("/api/tickets", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({ userId, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
       });
       const data = await res.json();
       if (data.harvested) {

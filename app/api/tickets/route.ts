@@ -3,6 +3,13 @@ import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 
+/* ── Local-date helper (uses the user's device timezone, sent via ?tz= or body.timezone) ── */
+function todayLocal(timezone: string, offsetDays = 0): string {
+  const now = new Date();
+  if (offsetDays) now.setUTCDate(now.getUTCDate() + offsetDays);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(now);
+}
+
 function getAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -25,6 +32,7 @@ export async function GET(req: NextRequest) {
   if (!admin) return NextResponse.json({ error: "DB not configured" }, { status: 503 });
 
   const userId = req.nextUrl.searchParams.get("userId");
+  const timezone = req.nextUrl.searchParams.get("tz") || "America/Los_Angeles";
   if (!userId || userId === "default") return NextResponse.json({ error: "userId required" }, { status: 400 });
 
   // garden_status 가져오기 (없으면 생성)
@@ -71,8 +79,8 @@ export async function GET(req: NextRequest) {
 
   const stageInfo = getStage(garden.total_tickets);
 
-  // 오늘 티켓 정보
-  const today = new Date().toISOString().split("T")[0];
+  // 오늘 티켓 정보 (사용자 로컬 타임존 기준)
+  const today = todayLocal(timezone);
   const { data: todayTicket } = await admin
     .from("happiness_tickets")
     .select("*")
@@ -105,10 +113,11 @@ export async function POST(req: NextRequest) {
   const admin = getAdmin();
   if (!admin) return NextResponse.json({ error: "DB not configured" }, { status: 503 });
 
-  const { userId, type, moodScore } = await req.json();
+  const { userId, type, moodScore, timezone: bodyTz } = await req.json();
   if (!userId || userId === "default") return NextResponse.json({ error: "userId required" }, { status: 400 });
 
-  const today = new Date().toISOString().split("T")[0];
+  const timezone: string = bodyTz || "America/Los_Angeles";
+  const today = todayLocal(timezone);
 
   // garden_status 가져오기 (없으면 생성)
   let { data: garden } = await admin
@@ -152,10 +161,8 @@ export async function POST(req: NextRequest) {
     ticket.daily_chat = true;
     ticketsAdded += 1;
 
-    // 연속 기록 계산
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().split("T")[0];
+    // 연속 기록 계산 (사용자 로컬 타임존 기준)
+    const yesterdayStr = todayLocal(timezone, -1);
 
     let newStreak = 1;
     if (garden.last_chat_date === yesterdayStr) {

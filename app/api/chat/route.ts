@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
+/* ── Local-date helper (uses the user's device timezone, not server TZ) ── */
+// The client sends its IANA timezone (e.g. "America/Los_Angeles") in body.timezone.
+// Pass it here so "today" reflects the USER's calendar day, not UTC or a fixed zone.
+function todayLocal(timezone: string, offsetDays = 0): string {
+  const now = new Date();
+  if (offsetDays) now.setUTCDate(now.getUTCDate() + offsetDays);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(now);
+}
+
 /* ── Supabase Admin Client (service role key, bypasses RLS) ── */
 let _supabaseAdmin: SupabaseClient | null = null;
 
@@ -685,13 +694,13 @@ async function syncAppointmentToTotalmedix(appointment: Record<string, unknown>,
 }
 
 /* ── Happiness Ticket Grant (direct DB, no self-fetch) ── */
-async function grantTicket(elderId: string, type: string, moodScore?: number) {
-  if (elderId === "default") return;
+async function grantTicket(elderId: string, type: string, timezone: string, moodScore?: number): Promise<{ granted: number; reason: string; total?: number }> {
+  if (elderId === "default") return { granted: 0, reason: "userId-default" };
   const admin = getSupabaseAdmin();
-  if (!admin) { console.error("[ticket] No DB client"); return; }
+  if (!admin) { console.error("[ticket] No DB client"); return { granted: 0, reason: "no-db-client" }; }
 
   try {
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayLocal(timezone);
 
     // garden_status 가져오기 (없으면 생성)
     let { data: garden } = await admin
@@ -701,7 +710,7 @@ async function grantTicket(elderId: string, type: string, moodScore?: number) {
         .from("garden_status").insert({ elder_id: elderId }).select().single();
       garden = ng;
     }
-    if (!garden) { console.error("[ticket] Failed to get garden"); return; }
+    if (!garden) { console.error("[ticket] Failed to get garden"); return { granted: 0, reason: "no-garden" }; }
 
     // 오늘 티켓 레코드 가져오기 (없으면 생성)
     let { data: ticket } = await admin
@@ -711,7 +720,7 @@ async function grantTicket(elderId: string, type: string, moodScore?: number) {
         .from("happiness_tickets").insert({ elder_id: elderId, date: today }).select().single();
       ticket = nt;
     }
-    if (!ticket) { console.error("[ticket] Failed to get ticket"); return; }
+    if (!ticket) { console.error("[ticket] Failed to get ticket"); return { granted: 0, reason: "no-ticket" }; }
 
     let ticketsAdded = 0;
 
@@ -719,10 +728,8 @@ async function grantTicket(elderId: string, type: string, moodScore?: number) {
       ticket.daily_chat = true;
       ticketsAdded += 1;
 
-      // 연속 기록 계산
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().split("T")[0];
+      // 연속 기록 계산 (사용자 로컬 타임존 기준)
+      const yesterdayStr = todayLocal(timezone, -1);
 
       let newStreak = 1;
       if (garden.last_chat_date === yesterdayStr) {
@@ -773,17 +780,20 @@ async function grantTicket(elderId: string, type: string, moodScore?: number) {
         total_tickets: newTotal, current_stage: stageCalc, updated_at: new Date().toISOString(),
       }).eq("elder_id", elderId);
 
-      console.log(`[ticket] ${type} granted: +${ticketsAdded}, total=${newTotal}, stage=${stageCalc}`);
+      console.log(`[ticket] ${type} granted: +${ticketsAdded}, total=${newTotal}, stage=${stageCalc} (elder=${elderId}, date=${today})`);
+      return { granted: ticketsAdded, reason: `granted-${type}`, total: newTotal };
     } else {
-      console.log(`[ticket] ${type}: no new tickets (already granted today)`);
+      console.log(`[ticket] ${type}: no new tickets (already granted today) elder=${elderId} date=${today} daily_chat=${ticket.daily_chat}`);
+      return { granted: 0, reason: `already-granted-today-${type}` };
     }
   } catch (e) {
     console.error("[ticket] grant failed:", e);
+    return { granted: 0, reason: "exception" };
   }
 }
 
 /* ── Mood Sync to TotalMedix (direct, no self-fetch) ── */
-async function triggerMoodSync(elderId: string) {
+async function triggerMoodSync(elderId: string, timezone: string) {
   if (elderId === "default") return;
   const elloDb = getSupabaseAdmin();
   const tm = getTotalmedixAdmin();
@@ -792,8 +802,8 @@ async function triggerMoodSync(elderId: string) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) { console.log("[mood-sync] No API key"); return; }
 
-  // 1. 오늘 대화 가져오기
-  const today = new Date().toISOString().split("T")[0];
+  // 1. 오늘 대화 가져오기 (사용자 로컬 타임존 기준)
+  const today = todayLocal(timezone);
   const { data: conversations } = await elloDb
     .from("conversations")
     .select("role, content, created_at")
@@ -850,7 +860,7 @@ async function triggerMoodSync(elderId: string) {
     console.log(`[mood-sync] Synced: participant=${link.participant_id}, mood=${moodData.mood_score}, alert=${moodData.alert_level}`);
     // 기분 보너스 티켓 (7점 이상)
     if (moodData.mood_score >= 7) {
-      grantTicket(elderId, "mood", moodData.mood_score).catch(e => console.error("[ticket-mood] error:", e));
+      grantTicket(elderId, "mood", timezone, moodData.mood_score).catch(e => console.error("[ticket-mood] error:", e));
     }
   }
 }
@@ -1190,8 +1200,22 @@ AI응답: ${rawText}`,
                   const text = cleanText || rawText;
                   await saveConversation(elderId, "user", lastUserMsg);
                   await saveConversation(elderId, "assistant", text);
-                  triggerMoodSync(elderId).catch(e => console.error('[mood-sync] error:', e));
-                  return NextResponse.json({ text, appointmentSaved: extractSaved });
+                  // 행복티켓: extraction 경로에서도 누락 없이 적립
+                  let tChat: { granted: number; reason: string; total?: number } = { granted: 0, reason: "not-called" };
+                  let tApt: { granted: number; reason: string; total?: number } | null = null;
+                  try {
+                    tChat = await grantTicket(elderId, "chat", timezone);
+                    if (extractSaved) tApt = await grantTicket(elderId, "appointment", timezone);
+                  } catch (e) {
+                    console.error('[ticket] error (extraction path):', e);
+                    tChat = { granted: 0, reason: "exception-outer" };
+                  }
+                  triggerMoodSync(elderId, timezone).catch(e => console.error('[mood-sync] error:', e));
+                  return NextResponse.json({
+                    text,
+                    appointmentSaved: extractSaved,
+                    _debug: { elderId, viaExtraction: true, timezone, today: todayLocal(timezone), ticketChat: tChat, ticketAppointment: tApt },
+                  });
                 }
               } catch {
                 console.log("[chat] Extraction JSON parse failed, skipping");
@@ -1213,19 +1237,34 @@ AI응답: ${rawText}`,
     await saveConversation(elderId, "assistant", text);
 
     // 행복티켓: await sequentially to avoid race condition + ensure DB write completes on Vercel
+    let ticketResult: { granted: number; reason: string; total?: number } = { granted: 0, reason: "not-called" };
+    let ticketAptResult: { granted: number; reason: string; total?: number } | null = null;
     try {
-      await grantTicket(elderId, "chat");
+      ticketResult = await grantTicket(elderId, "chat", timezone);
       if (didSave) {
-        await grantTicket(elderId, "appointment");
+        ticketAptResult = await grantTicket(elderId, "appointment", timezone);
       }
     } catch (e) {
       console.error('[ticket] error:', e);
+      ticketResult = { granted: 0, reason: "exception-outer" };
     }
 
     // Mood sync to totalmedix (fire-and-forget OK, user confirmed working)
-    triggerMoodSync(elderId).catch(e => console.error('[mood-sync] error:', e));
+    triggerMoodSync(elderId, timezone).catch(e => console.error('[mood-sync] error:', e));
 
-    return NextResponse.json({ text, appointmentSaved: didSave, _debug: { elderId, hasKeywords: /병원|약국|예약|약속/i.test(lastUserMsg), inlineBlocks: appointments.length } });
+    return NextResponse.json({
+      text,
+      appointmentSaved: didSave,
+      _debug: {
+        elderId,
+        timezone,
+        today: todayLocal(timezone),
+        hasKeywords: /병원|약국|예약|약속/i.test(lastUserMsg),
+        inlineBlocks: appointments.length,
+        ticketChat: ticketResult,
+        ticketAppointment: ticketAptResult,
+      },
+    });
 
   } catch (error) {
     console.error("[chat] Unhandled error:", error);
