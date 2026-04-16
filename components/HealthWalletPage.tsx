@@ -149,7 +149,7 @@ export default function HealthWalletPage({ onClose, userId, langCode = "ko" }: P
       reader.onload = () => {
         img.onload = () => {
           let { width, height } = img;
-          const MAX = 1200;
+          const MAX = 2000;
           if (width > MAX || height > MAX) {
             const s = MAX / Math.max(width, height);
             width = Math.round(width * s);
@@ -158,7 +158,7 @@ export default function HealthWalletPage({ onClose, userId, langCode = "ko" }: P
           const c = document.createElement("canvas");
           c.width = width; c.height = height;
           c.getContext("2d")!.drawImage(img, 0, 0, width, height);
-          resolve(c.toDataURL("image/jpeg", 0.8));
+          resolve(c.toDataURL("image/jpeg", 0.95));
         };
         img.onerror = () => reject(new Error("Image load failed"));
         img.src = reader.result as string;
