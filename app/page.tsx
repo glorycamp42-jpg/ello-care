@@ -473,7 +473,6 @@ export default function Home() {
     tickets={tickets} onShowTickets={() => setShowTicketPage(true)}
     onShowReminders={() => setShowReminders(true)}
     onShowBible={() => setShowBible(true)}
-    onShowSafety={() => setShowSafety(true)}
     onShowHealthWallet={() => setShowHealthWallet(true)}
     onChangeLang={handleChangeLanguage}
     userCity={userCity}
@@ -504,7 +503,6 @@ interface ChatUIProps {
   onShowTickets: () => void;
   onShowReminders: () => void;
   onShowBible: () => void;
-  onShowSafety: () => void;
   onShowHealthWallet: () => void;
   onChangeLang: () => void;
   userCity: string;
@@ -540,7 +538,7 @@ function ChatUI({
   lastAssistantText, setLastAssistantText,
   chatEndRef, recognitionRef, fileInputRef, messagesRef,
   playTTS, stopOrReplayTTS, createRecognition, onChangeCharacter,
-  tickets, onShowTickets, onShowReminders, onShowBible, onShowSafety, onShowHealthWallet, onChangeLang, userCity, lang, checkedIn, setCheckedIn, appointmentToast, setAppointmentToast, userId,
+  tickets, onShowTickets, onShowReminders, onShowBible, onShowHealthWallet, onChangeLang, userCity, lang, checkedIn, setCheckedIn, appointmentToast, setAppointmentToast, userId,
 }: ChatUIProps) {
 
   /* ── Interpreter mode state ── */
