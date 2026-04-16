@@ -203,18 +203,27 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: [{ role: "user", content: `[SYSTEM] Generate a warm, personalized greeting. Memories: ${memContext || "none"}. Upcoming appointments: ${apptContext || "none"}. Keep it to 1-2 sentences. Be warm and caring.` }],
+          messages: [{ role: "user", content: "안녕" }],
           persona: persona?.id || "granddaughter",
           langPrompt: currentLang.systemPrompt,
           charName: currentLang.charName,
           userId,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          greetingMode: true,
         }),
       });
       const greetData = await greetRes.json();
       if (greetData.text && !greetData.error) {
-        console.log("[greeting] Smart greeting generated:", greetData.text.slice(0, 50));
-        return greetData.text;
+        // Filter out any raw system prompt text that might leak through
+        const filtered = greetData.text
+          .replace(/\[SYSTEM\].*$/s, "")
+          .replace(/Memories:.*$/s, "")
+          .replace(/Keep it to \d+-\d+ sentences.*$/s, "")
+          .trim();
+        if (filtered.length > 5) {
+          console.log("[greeting] Smart greeting generated:", filtered.slice(0, 50));
+          return filtered;
+        }
       }
     } catch (err) {
       console.error("[greeting] Failed, using default:", err);

@@ -975,21 +975,19 @@ export async function POST(req: NextRequest) {
       } catch (e) { console.log('[chat] Cookie auth fallback failed:', e); }
     }
     console.log(`[chat] Final elderId: ${elderId}`);
-    if (elderId !== "default") {
-      const adminDb = getSupabaseAdmin();
-      if (adminDb) {
-        const { data: mems } = await adminDb
-          .from("memories")
-          .select("date, time, content")
-          .eq("user_id", elderId)
-          .order("created_at", { ascending: false })
-          .limit(15);
-        if (mems && mems.length > 0) {
-          memorySummary = mems.map((m: { date: string; time: string; content: string }) =>
-            `${m.date}/${m.time}: ${m.content}`
-          ).join("\n");
-          console.log(`[chat] Loaded ${mems.length} memories for ${elderId}`);
-        }
+    const adminDb = getSupabaseAdmin();
+    if (elderId !== "default" && adminDb) {
+      const { data: mems } = await adminDb
+        .from("memories")
+        .select("date, time, content")
+        .eq("user_id", elderId)
+        .order("created_at", { ascending: false })
+        .limit(15);
+      if (mems && mems.length > 0) {
+        memorySummary = mems.map((m: { date: string; time: string; content: string }) =>
+          `${m.date}/${m.time}: ${m.content}`
+        ).join("\n");
+        console.log(`[chat] Loaded ${mems.length} memories for ${elderId}`);
       }
     }
 
