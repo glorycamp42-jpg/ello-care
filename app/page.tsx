@@ -477,7 +477,6 @@ export default function Home() {
     onChangeCharacter={handleChangeCharacter}
     tickets={tickets} onShowTickets={() => setShowTicketPage(true)}
     onShowReminders={() => setShowReminders(true)}
-    onShowBible={() => setShowBible(true)}
     onShowHomeland={() => setShowHomeland(true)}
     onShowHealthWallet={() => setShowHealthWallet(true)}
     onChangeLang={handleChangeLanguage}
@@ -508,7 +507,6 @@ interface ChatUIProps {
   tickets: ReturnType<typeof useTickets>;
   onShowTickets: () => void;
   onShowReminders: () => void;
-  onShowBible: () => void;
   onShowHomeland: () => void;
   onShowHealthWallet: () => void;
   onChangeLang: () => void;
@@ -545,8 +543,7 @@ function ChatUI({
   lastAssistantText, setLastAssistantText,
   chatEndRef, recognitionRef, fileInputRef, messagesRef,
   playTTS, stopOrReplayTTS, createRecognition, onChangeCharacter,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  tickets, onShowTickets, onShowReminders, onShowBible, onShowHomeland, onShowHealthWallet, onChangeLang, userCity, lang, checkedIn, setCheckedIn, appointmentToast, setAppointmentToast, userId,
+  tickets, onShowTickets, onShowReminders, onShowHomeland, onShowHealthWallet, onChangeLang, userCity, lang, checkedIn, setCheckedIn, appointmentToast, setAppointmentToast, userId,
 }: ChatUIProps) {
 
   /* ── Interpreter mode state ── */
