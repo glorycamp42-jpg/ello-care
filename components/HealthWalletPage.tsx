@@ -178,9 +178,24 @@ export default function HealthWalletPage({ onClose, userId, langCode = "ko" }: P
         body: JSON.stringify({ section, image: dataUrl }),
       });
       const result = await res.json();
-      if (result.fields) {
-        setDraft(result.fields);
-        setAdding(true);
+      if (result.fields && Object.values(result.fields).some((v) => v && String(v).trim())) {
+        // 자동 저장 (어르신 편의)
+        const table = TABLE_MAP[section];
+        const saveRes = await fetch("/api/health-wallet", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ table, user_id: userId, ...result.fields }),
+        });
+        const saveJson = await saveRes.json();
+        if (saveJson.error) {
+          // 저장 실패 시 수동 편집 모드로
+          setDraft(result.fields);
+          setAdding(true);
+          alert(langCode === "ko" ? "저장 실패. 확인 후 저장 버튼을 눌러주세요." : "Save failed. Please review and press save.");
+        } else {
+          fetchAll();
+          alert(langCode === "ko" ? "사진에서 정보를 저장했어요!" : "Info saved from photo!");
+        }
       } else {
         alert(langCode === "ko" ? "사진에서 정보를 읽지 못했어요. 다시 시도해주세요." : "Could not read info from photo. Please try again.");
       }
@@ -328,3 +343,4 @@ export default function HealthWalletPage({ onClose, userId, langCode = "ko" }: P
     </div>
   );
 }
+     
