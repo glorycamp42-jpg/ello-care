@@ -893,6 +893,133 @@ function cleanBase64(raw: string): string {
   return raw.replace(/\s/g, "");
 }
 
+/* ── Interpreter Mode Handler ── */
+const LANG_NAMES: Record<string, { native: string; korean: string; speechCode: string }> = {
+  en: { native: "English", korean: "영어", speechCode: "en-US" },
+  es: { native: "Español", korean: "스페인어", speechCode: "es-ES" },
+  zh: { native: "中文", korean: "중국어", speechCode: "zh-CN" },
+  vi: { native: "Tiếng Việt", korean: "베트남어", speechCode: "vi-VN" },
+  ja: { native: "日本語", korean: "일본어", speechCode: "ja-JP" },
+  ko: { native: "한국어", korean: "한국어", speechCode: "ko-KR" },
+};
+
+interface InterpreterBody {
+  interpreterMode: true;
+  messages: { role: string; content: string }[];
+  targetLang: string;      // "en", "es", "zh", etc.
+  speakerRole: string;     // "user" (Korean speaker) or "other" (target lang speaker)
+  userLang?: string;       // user's language code, default "ko"
+  history?: { speaker: string; original: string; translated: string }[];
+}
+
+async function handleInterpreter(body: InterpreterBody, apiKey: string) {
+  const targetLang = body.targetLang || "en";
+  const speakerRole = body.speakerRole || "user";
+  const userLang = body.userLang || "ko";
+  const targetInfo = LANG_NAMES[targetLang] || LANG_NAMES.en;
+  const userInfo = LANG_NAMES[userLang] || LANG_NAMES.ko;
+  const history = body.history || [];
+  const lastMsg = body.messages?.[body.messages.length - 1]?.content || "";
+
+  console.log(`[interpret] speaker=${speakerRole}, targetLang=${targetLang}, msg=${lastMsg.slice(0, 80)}`);
+
+  // Build conversation context from history
+  const historyText = history.length > 0
+    ? "\n\nConversation so far:\n" + history.map(h =>
+        `${h.speaker === "user" ? "👤 User" : "🗣 Other"}: ${h.original} → ${h.translated}`
+      ).join("\n")
+    : "";
+
+  let systemPrompt: string;
+  let userPrompt: string;
+
+  if (speakerRole === "user") {
+    // User spoke in Korean → translate to target language
+    systemPrompt = `You are a professional real-time interpreter helping an elderly ${userInfo.native}-speaking person communicate with a ${targetInfo.native}-speaking person.
+
+RULES:
+1. Translate the user's ${userInfo.native} message into natural, conversational ${targetInfo.native}.
+2. Do NOT translate word-for-word. Make it sound natural like a native ${targetInfo.native} speaker would say it.
+3. Keep medical/technical terms accurate.
+4. If the user is describing symptoms, be precise.
+5. Add appropriate politeness for the context (e.g., "please", "thank you" in medical settings).
+6. Also provide a brief ${userInfo.native} confirmation so the user knows what you said.
+
+RESPONSE FORMAT (JSON only, no markdown, no extra text):
+{"forOther": "natural ${targetInfo.native} translation to say aloud to the other person", "forUser": "brief ${userInfo.native} confirmation of what you said (1 sentence)", "exit": false}
+
+If the user says "끝", "그만", "done", "종료" → set exit: true and put a ${userInfo.native} conversation summary in forUser.${historyText}`;
+
+    userPrompt = lastMsg;
+  } else {
+    // Other person spoke in target language → translate to Korean
+    systemPrompt = `You are a professional real-time interpreter. The other person just spoke in ${targetInfo.native}. Translate their message into natural, easy-to-understand ${userInfo.native} for an elderly person.
+
+RULES:
+1. Translate into simple, warm ${userInfo.native} that an elderly person can easily understand.
+2. Avoid difficult words or medical jargon — use plain language.
+3. If the other person asked a question, make it clear it's a question.
+4. Keep the tone warm and reassuring.
+
+RESPONSE FORMAT (JSON only, no markdown, no extra text):
+{"forUser": "natural ${userInfo.native} translation for the elderly user", "forOther": "", "exit": false}${historyText}`;
+
+    userPrompt = lastMsg;
+  }
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 500,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userPrompt }],
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      console.error("[interpret] API error:", err);
+      return NextResponse.json({ error: "Interpreter API failed" }, { status: 500 });
+    }
+
+    const data = await response.json();
+    const text = data.content?.[0]?.text || "";
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+      console.error("[interpret] No JSON in response:", text);
+      return NextResponse.json({
+        interpreterMode: true,
+        forOther: speakerRole === "user" ? text : "",
+        forUser: speakerRole === "other" ? text : "통역 중이에요.",
+        exit: false,
+      });
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    console.log(`[interpret] Result: forOther=${(parsed.forOther || "").slice(0, 60)}, forUser=${(parsed.forUser || "").slice(0, 60)}, exit=${parsed.exit}`);
+
+    return NextResponse.json({
+      interpreterMode: true,
+      forOther: parsed.forOther || "",
+      forUser: parsed.forUser || "",
+      exit: parsed.exit || false,
+      targetLang,
+      speakerRole,
+    });
+  } catch (e) {
+    console.error("[interpret] Error:", e);
+    return NextResponse.json({ error: "Interpreter error" }, { status: 500 });
+  }
+}
+
 /* ── Main Handler ── */
 export async function POST(req: NextRequest) {
   console.log('[chat] API ROUTE CALLED');
@@ -906,6 +1033,12 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+
+    /* ── INTERPRETER MODE ── */
+    if (body.interpreterMode) {
+      return handleInterpreter(body, apiKey);
+    }
+
     const messages: IncomingMessage[] = body.messages;
     const personaId: string = body.persona || "granddaughter";
     const langPrompt: string = body.langPrompt || "You MUST respond ONLY in Korean.";
@@ -1203,125 +1336,4 @@ When answering health questions, use this data naturally. For example if asked "
           const extractRes = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
             headers: {
-              "Content-Type": "application/json",
-              "x-api-key": apiKey,
-              "anthropic-version": "2023-06-01",
-            },
-            body: JSON.stringify({
-              model: "claude-sonnet-4-20250514",
-              max_tokens: 300,
-              messages: [{
-                role: "user",
-                content: `오늘 날짜: ${laParts} (${laFull}). 다음 대화에서 일정/예약/약속 정보를 추출해줘.
-"내일"은 ${laParts} 다음 날, "모레"는 그 다음 날로 계산해.
-시간이 명시되지 않은 경우 "오전 9시"를 기본값으로 사용해.
-
-반드시 아래 JSON 형식으로만 응답해 (다른 텍스트 없이):
-{"title":"제목","type":"hospital","location":"","scheduled_at":"YYYY-MM-DDTHH:MM:SS"}
-
-type은: hospital, adhc, pharmacy, other 중 하나.
-일정 정보가 없으면 null 만 응답해.
-
-사용자: ${lastUserMsg}
-AI응답: ${rawText}`,
-              }],
-            }),
-          });
-
-          console.log(`[chat] Extraction API response status: ${extractRes.status}`);
-          if (!extractRes.ok) {
-            const errBody = await extractRes.text();
-            console.error(`[chat] Extraction API FAILED: ${extractRes.status} ${errBody.slice(0, 200)}`);
-          }
-          if (extractRes.ok) {
-            const extractData = await extractRes.json();
-            const extractText = extractData.content?.[0]?.text?.trim() || "";
-            console.log(`[chat] 추출 결과: ${extractText}`);
-
-            if (extractText && extractText !== "null" && extractText.includes("{")) {
-              try {
-                // JSON 부분만 추출 (앞뒤 텍스트 제거)
-                const jsonMatch = extractText.match(/\{[\s\S]*\}/);
-                if (!jsonMatch) throw new Error("No JSON found");
-                const apt = JSON.parse(jsonMatch[0]);
-                console.log(`[chat] 파싱된 JSON:`, JSON.stringify(apt));
-                if (apt && apt.title) {
-                  console.log(`[chat] Saving extracted appointment: ${apt.title} (${apt.type})`);
-                  const extractSaved = await saveAppointments([apt], elderId);
-                  console.log(`[chat] Extraction save result: ${extractSaved}`);
-                  const text = cleanText || rawText;
-                  await saveConversation(elderId, "user", lastUserMsg);
-                  await saveConversation(elderId, "assistant", text);
-                  // 행복티켓: extraction 경로에서도 누락 없이 적립
-                  let tChat: { granted: number; reason: string; total?: number } = { granted: 0, reason: "not-called" };
-                  let tApt: { granted: number; reason: string; total?: number } | null = null;
-                  try {
-                    tChat = await grantTicket(elderId, "chat", timezone);
-                    if (extractSaved) tApt = await grantTicket(elderId, "appointment", timezone);
-                  } catch (e) {
-                    console.error('[ticket] error (extraction path):', e);
-                    tChat = { granted: 0, reason: "exception-outer" };
-                  }
-                  triggerMoodSync(elderId, timezone).catch(e => console.error('[mood-sync] error:', e));
-                  return NextResponse.json({
-                    text,
-                    appointmentSaved: extractSaved,
-                    _debug: { elderId, viaExtraction: true, timezone, today: todayLocal(timezone), ticketChat: tChat, ticketAppointment: tApt },
-                  });
-                }
-              } catch {
-                console.log("[chat] Extraction JSON parse failed, skipping");
-              }
-            }
-          }
-        } catch (err) {
-          console.error("[chat] Extraction call failed:", err);
-        }
-      }
-    }
-
-    const text = cleanText || rawText;
-    const hasKeywords = /병원|약국|ADHC|진료|예약|방문|약속|appointment|doctor|pharmacy|시에|시 에|월.*일/i.test(lastUserMsg + " " + rawText);
-    console.log(`[chat] Final response (${text.length} chars), didSave=${didSave}, hasKeywords=${hasKeywords}, elderId=${elderId}`);
-
-    // Save conversation to DB
-    await saveConversation(elderId, "user", lastUserMsg);
-    await saveConversation(elderId, "assistant", text);
-
-    // 행복티켓: await sequentially to avoid race condition + ensure DB write completes on Vercel
-    let ticketResult: { granted: number; reason: string; total?: number } = { granted: 0, reason: "not-called" };
-    let ticketAptResult: { granted: number; reason: string; total?: number } | null = null;
-    try {
-      ticketResult = await grantTicket(elderId, "chat", timezone);
-      if (didSave) {
-        ticketAptResult = await grantTicket(elderId, "appointment", timezone);
-      }
-    } catch (e) {
-      console.error('[ticket] error:', e);
-      ticketResult = { granted: 0, reason: "exception-outer" };
-    }
-
-    // Mood sync to totalmedix (fire-and-forget OK, user confirmed working)
-    triggerMoodSync(elderId, timezone).catch(e => console.error('[mood-sync] error:', e));
-
-    return NextResponse.json({
-      text,
-      appointmentSaved: didSave,
-      _debug: {
-        elderId,
-        timezone,
-        today: todayLocal(timezone),
-        localTime,
-        serverUtc: new Date().toISOString(),
-        hasKeywords: /병원|약국|예약|약속/i.test(lastUserMsg),
-        inlineBlocks: appointments.length,
-        ticketChat: ticketResult,
-        ticketAppointment: ticketAptResult,
-      },
-    });
-
-  } catch (error) {
-    console.error("[chat] Unhandled error:", error);
-    return NextResponse.json({ error: "Server error", details: String(error) }, { status: 500 });
-  }
-}
+              "Content-Type": "applic
