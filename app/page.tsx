@@ -219,8 +219,15 @@ export default function Home() {
           .replace(/\[SYSTEM\].*$/s, "")
           .replace(/Memories:.*$/s, "")
           .replace(/Keep it to \d+-\d+ sentences.*$/s, "")
+          .replace(/Be warm and caring\.?/gi, "")
+          .replace(/\bcaring\.?\s*/gi, "")
+          .replace(/\bwarm\.?\s*/gi, "")
+          .replace(/ABSOLUTE RULE.*$/s, "")
+          .replace(/CRITICAL.*$/s, "")
+          .replace(/You are a.*companion.*$/s, "")
+          .replace(/Conversation style:.*$/s, "")
           .trim();
-        if (filtered.length > 5) {
+        if (filtered.length > 5 && !/^[a-zA-Z.\s]{1,20}$/.test(filtered)) {
           console.log("[greeting] Smart greeting generated:", filtered.slice(0, 50));
           return filtered;
         }
@@ -1074,17 +1081,4 @@ function SettingsMenu({ onChangeCharacter }: { onChangeCharacter: () => void }) 
             <button
               onClick={() => { setOpen(false); handleLogout(); }}
               style={{
-                display: "block", width: "100%", padding: "12px 16px",
-                fontSize: 14, color: "#EF4444", background: "none", border: "none",
-                textAlign: "left", cursor: "pointer",
-              }}
-            >
-              로그아웃
-            </button>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-                                                         
+                display: "block", width: "1
