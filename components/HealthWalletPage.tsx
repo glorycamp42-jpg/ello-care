@@ -52,7 +52,7 @@ const TABLE_MAP: Record<SectionKey, string> = {
 
 const SECTION_ICONS: Record<SectionKey, string> = {
   medications: "💊", insurance: "🪪", allergies: "⚠️", diagnoses: "📋",
-  doctors: "👨‍⚕️", pharmacies: "🏥", emergency: "🆘", vaccinations: "💉", surgeries: "🔪",
+  doctors: "👨‍⚕️", pharmacies: "🏥", emergency: "🆘", vaccinations: "💉", surgeries: "🏨",
 };
 
 /* field definitions per section */
@@ -197,7 +197,7 @@ export default function HealthWalletPage({ onClose, userId, langCode = "ko" }: P
         {/* Header */}
         <div className="bg-warm-brown text-cream px-4 py-3 flex items-center gap-3">
           <button onClick={() => { setActiveSection(null); setAdding(false); setDraft({}); }} className="text-xl">←</button>
-          <span className="text-2xl">{SECTION_ICONS[activeSection]}</span>
+          <span className="text-3xl">{SECTION_ICONS[activeSection]}</span>
           <h2 className="text-lg font-bold flex-1">{t[activeSection]}</h2>
           <button onClick={() => { setDraft({}); setAdding(true); }} className="bg-coral text-white px-3 py-1 rounded-full text-sm font-bold">+ {t.add}</button>
         </div>
@@ -260,10 +260,10 @@ export default function HealthWalletPage({ onClose, userId, langCode = "ko" }: P
               const table = TABLE_MAP[s];
               const count = (data[table] || []).length;
               return (
-                <button key={s} onClick={() => setActiveSection(s)} className="bg-white rounded-2xl p-4 shadow-sm border border-warm-gray-light/10 flex flex-col items-center gap-2 active:scale-95 transition-transform">
-                  <span className="text-3xl">{SECTION_ICONS[s]}</span>
-                  <span className="text-sm font-bold text-warm-brown">{t[s]}</span>
-                  {count > 0 && <span className="bg-coral text-white text-xs font-bold rounded-full px-2 py-0.5">{count}</span>}
+                <button key={s} onClick={() => setActiveSection(s)} className="bg-white rounded-2xl p-5 shadow-sm border border-warm-gray-light/10 flex flex-col items-center gap-3 active:scale-95 transition-transform">
+                  <span className="text-5xl">{SECTION_ICONS[s]}</span>
+                  <span className="text-base font-bold text-warm-brown">{t[s]}</span>
+                  {count > 0 && <span className="bg-coral text-white text-sm font-bold rounded-full px-2.5 py-0.5">{count}</span>}
                 </button>
               );
             })}
@@ -271,5 +271,4 @@ export default function HealthWalletPage({ onClose, userId, langCode = "ko" }: P
         </div>
       )}
     </div>
-  );
-}
+  )
