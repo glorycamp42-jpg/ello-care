@@ -194,7 +194,9 @@ export default function HealthWalletPage({ onClose, userId, langCode = "ko" }: P
           alert((langCode === "ko" ? "저장 실패: " : "Save failed: ") + saveJson.error);
         } else {
           fetchAll();
-          alert(langCode === "ko" ? "사진에서 정보를 저장했어요!" : "Info saved from photo!");
+          // 추출된 필드 요약
+          const filled = Object.entries(result.fields).filter(([, v]) => v && String(v).trim()).map(([k, v]) => `${k}: ${v}`).join("\n");
+          alert((langCode === "ko" ? "저장됨!\n\n추출된 정보:\n" : "Saved!\n\nExtracted info:\n") + filled);
         }
       } else {
         alert(langCode === "ko" ? "사진에서 정보를 읽지 못했어요. 다시 시도해주세요." : "Could not read info from photo. Please try again.");
