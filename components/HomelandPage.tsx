@@ -128,17 +128,25 @@ export default function HomelandPage({ onClose, langCode = "ko" }: HomelandPageP
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
   const [videoLoading, setVideoLoading] = useState(false);
   const [nowPlayingLabel, setNowPlayingLabel] = useState<string | null>(null);
+  const [searchError, setSearchError] = useState(false);
 
   /* ── YouTube search → embed (used for radio, music, and video) ── */
   const playYouTube = useCallback(async (query: string, label?: string) => {
     setVideoLoading(true);
     setCurrentVideoId(null);
+    setSearchError(false);
     setNowPlayingLabel(label || null);
     try {
       const res = await fetch(`/api/youtube-search?q=${encodeURIComponent(query)}`);
       const data = await res.json();
-      if (data.videoId) setCurrentVideoId(data.videoId);
-    } catch { /* ignore */ }
+      if (data.videoId) {
+        setCurrentVideoId(data.videoId);
+      } else {
+        setSearchError(true);
+      }
+    } catch {
+      setSearchError(true);
+    }
     setVideoLoading(false);
   }, []);
 
@@ -190,6 +198,11 @@ export default function HomelandPage({ onClose, langCode = "ko" }: HomelandPageP
         <div className="mx-4 mb-3 p-8 bg-warm-white rounded-2xl text-center">
           <div className="text-3xl mb-2">🎵</div>
           <p className="text-warm-gray text-[16px] animate-pulse">{t.loading}</p>
+        </div>
+      )}
+      {searchError && !videoLoading && (
+        <div className="mx-4 mb-3 p-4 bg-red-50 rounded-2xl text-center border border-red-200">
+          <p className="text-red-600 text-[14px]">검색에 실패했습니다. 다시 시도해 주세요.</p>
         </div>
       )}
 
