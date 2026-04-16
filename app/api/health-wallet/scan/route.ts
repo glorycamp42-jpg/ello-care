@@ -5,9 +5,21 @@ export const dynamic = "force-dynamic";
 type SectionKey = "medications" | "insurance" | "allergies" | "diagnoses" | "doctors" | "pharmacies" | "emergency" | "vaccinations" | "surgeries";
 
 const SECTION_PROMPTS: Record<SectionKey, string> = {
-  insurance: `Look very carefully at this health insurance card photo. Read ALL text visible, including small print. Common cards include LA Care, Medi-Cal, Medicare, Blue Shield, Anthem, Kaiser, Aetna, Humana, etc. Extract these fields as JSON:
-{"carrier": "insurance company or plan name (e.g. 'LA Care Medi-Cal', 'Medicare', 'Blue Shield')", "plan_name": "specific plan name or type if different from carrier", "member_id": "member/subscriber/CIN ID number - look for 'Member ID', 'CIN', 'ID#', 'Subscriber ID'", "group_number": "group number - look for 'Group', 'Group #', 'Grp'", "policy_holder": "patient/member full name printed on the card"}
-Look at all four corners and middle of the card. Numbers often appear in small print below labels. If a field is truly not visible, use empty string. Return ONLY the JSON object, no other text.`,
+  insurance: `You are looking at a photo of a health insurance card (US). Your job: read EVERY piece of text and number on the card - this is critical.
+
+Step 1: First, mentally scan the ENTIRE card - top to bottom, left to right. Look at logos, headers, labels, and ALL numbers (big or small).
+
+Step 2: Extract these fields. Be aggressive - if you see a number or name that could reasonably be the field, use it. Don't leave fields empty unless truly nothing is there.
+
+Common card examples:
+- LA Care Medi-Cal: has a CIN (9-digit Client Index Number), Member name, Date of Birth
+- Medicare: has Medicare Number (11-char alphanumeric like 1AB2-C34-DE56), Part A/B info
+- Private insurance (Blue Shield, Anthem, Kaiser, Aetna, Humana, UnitedHealthcare): has Member ID (often 9-12 digits/chars), Group # (4-8 digits), Rx BIN/PCN
+
+Return ONLY this JSON (no other text, no markdown):
+{"carrier": "insurance company/plan name exactly as printed", "plan_name": "specific plan name/type (HMO, PPO, EPO, Medi-Cal, etc.) if listed separately", "member_id": "the member/subscriber/CIN/ID number - ANY prominent ID number on the card", "group_number": "group number if any", "policy_holder": "patient/member full name printed on card"}
+
+If a field truly is not visible after careful reading, use empty string "".`,
 
   medications: `Look very carefully at this photo of a medication bottle, pill box, or prescription label. Read ALL visible text including small print on labels. Extract these fields as JSON:
 {"name": "medication/drug name (brand or generic)", "dosage": "strength with units (e.g. '10mg', '500mg', '25 mcg')", "frequency": "how often to take (e.g. 'once daily', 'twice daily', 'every 8 hours')", "purpose": "what it treats if visible (e.g. 'blood pressure', 'diabetes')", "prescriber": "doctor/prescriber name", "pharmacy": "pharmacy name if visible"}
