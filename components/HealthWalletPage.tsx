@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
-/* ── i18n ── */
+/* -- i18n -- */
 const I18N: Record<string, Record<string, string>> = {
   ko: {
     back: "돌아가기", title: "건강 수첩", medications: "복용 약", insurance: "보험증",
@@ -51,11 +51,10 @@ const TABLE_MAP: Record<SectionKey, string> = {
 };
 
 const SECTION_ICONS: Record<SectionKey, string> = {
-  medications: "💊", insurance: "🪪", allergies: "⚠️", diagnoses: "📋",
-  doctors: "👨‍⚕️", pharmacies: "🏥", emergency: "🆘", vaccinations: "💉", surgeries: "🏨",
+  medications: "\uD83D\uDC8A", insurance: "\uD83E\uDEAA", allergies: "\u26A0\uFE0F", diagnoses: "\uD83D\uDCCB",
+  doctors: "\uD83D\uDC68\u200D\u2695\uFE0F", pharmacies: "\uD83C\uDFE5", emergency: "\uD83C\uDD98", vaccinations: "\uD83D\uDC89", surgeries: "\uD83C\uDFE8",
 };
 
-/* field definitions per section */
 type FieldDef = { key: string; label: string; type?: "text" | "select" | "date" | "boolean"; options?: string[] };
 
 function getFields(section: SectionKey, t: Record<string, string>): FieldDef[] {
@@ -117,15 +116,15 @@ function getFields(section: SectionKey, t: Record<string, string>): FieldDef[] {
 
 function displayValue(item: Record<string, unknown>, section: SectionKey): string {
   switch (section) {
-    case "medications": return `${item.name || ""} ${item.dosage || ""} — ${item.frequency || ""}`;
-    case "insurance": return `${item.carrier || ""} · ${item.member_id || ""}`;
-    case "allergies": return `${item.allergen || ""} (${item.severity || ""})`;
-    case "diagnoses": return `${item.name || ""} ${item.icd_code ? `[${item.icd_code}]` : ""}`;
-    case "doctors": return `${item.name || ""} — ${item.specialty || ""}`;
-    case "pharmacies": return `${item.name || ""}`;
-    case "emergency": return `${item.name || ""} (${item.relationship || ""}) ${item.phone || ""}`;
-    case "vaccinations": return `${item.vaccine_name || ""} — ${item.date_given || ""}`;
-    case "surgeries": return `${item.procedure_name || ""} — ${item.date_performed || ""}`;
+    case "medications": return (item.name || "") + " " + (item.dosage || "") + " - " + (item.frequency || "");
+    case "insurance": return (item.carrier || "") + " / " + (item.member_id || "");
+    case "allergies": return (item.allergen || "") + " (" + (item.severity || "") + ")";
+    case "diagnoses": return (item.name || "") + (item.icd_code ? " [" + item.icd_code + "]" : "");
+    case "doctors": return (item.name || "") + " - " + (item.specialty || "");
+    case "pharmacies": return String(item.name || "");
+    case "emergency": return (item.name || "") + " (" + (item.relationship || "") + ") " + (item.phone || "");
+    case "vaccinations": return (item.vaccine_name || "") + " - " + (item.date_given || "");
+    case "surgeries": return (item.procedure_name || "") + " - " + (item.date_performed || "");
     default: return "";
   }
 }
@@ -140,11 +139,61 @@ export default function HealthWalletPage({ onClose, userId, langCode = "ko" }: P
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function compressImage(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const reader = new FileReader();
+      reader.onload = () => {
+        img.onload = () => {
+          let { width, height } = img;
+          const MAX = 1200;
+          if (width > MAX || height > MAX) {
+            const s = MAX / Math.max(width, height);
+            width = Math.round(width * s);
+            height = Math.round(height * s);
+          }
+          const c = document.createElement("canvas");
+          c.width = width; c.height = height;
+          c.getContext("2d")!.drawImage(img, 0, 0, width, height);
+          resolve(c.toDataURL("image/jpeg", 0.8));
+        };
+        img.onerror = () => reject(new Error("Image load failed"));
+        img.src = reader.result as string;
+      };
+      reader.onerror = () => reject(new Error("File read failed"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleScan(section: SectionKey, file: File) {
+    setScanning(true);
+    try {
+      const dataUrl = await compressImage(file);
+      const res = await fetch("/api/health-wallet/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ section, image: dataUrl }),
+      });
+      const result = await res.json();
+      if (result.fields) {
+        setDraft(result.fields);
+        setAdding(true);
+      } else {
+        alert(langCode === "ko" ? "사진에서 정보를 읽지 못했어요. 다시 시도해주세요." : "Could not read info from photo. Please try again.");
+      }
+    } catch {
+      alert(langCode === "ko" ? "사진 처리 중 오류가 발생했어요." : "Error processing photo.");
+    }
+    setScanning(false);
+  }
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(`/api/health-wallet?userId=${userId}`);
+      const r = await fetch("/api/health-wallet?userId=" + userId);
       const j = await r.json();
       setData(j);
     } catch { /* ignore */ }
@@ -186,7 +235,6 @@ export default function HealthWalletPage({ onClose, userId, langCode = "ko" }: P
 
   const sections: SectionKey[] = ["medications", "insurance", "allergies", "diagnoses", "doctors", "pharmacies", "emergency", "vaccinations", "surgeries"];
 
-  /* ── Detail View ── */
   if (activeSection) {
     const table = TABLE_MAP[activeSection];
     const items = (data[table] || []) as Record<string, unknown>[];
@@ -194,15 +242,25 @@ export default function HealthWalletPage({ onClose, userId, langCode = "ko" }: P
 
     return (
       <div className="flex flex-col h-screen bg-cream">
-        {/* Header */}
-        <div className="bg-warm-brown text-cream px-4 py-3 flex items-center gap-3">
-          <button onClick={() => { setActiveSection(null); setAdding(false); setDraft({}); }} className="text-xl">←</button>
+        <div className="bg-warm-brown text-cream px-4 py-3 flex items-center gap-2">
+          <button onClick={() => { setActiveSection(null); setAdding(false); setDraft({}); }} className="text-xl">&#8592;</button>
           <span className="text-3xl">{SECTION_ICONS[activeSection]}</span>
           <h2 className="text-lg font-bold flex-1">{t[activeSection]}</h2>
-          <button onClick={() => { setDraft({}); setAdding(true); }} className="bg-coral text-white px-3 py-1 rounded-full text-sm font-bold">+ {t.add}</button>
+          <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f && activeSection) { handleScan(activeSection, f); } e.target.value = ""; }} />
+          <button onClick={() => fileInputRef.current?.click()} disabled={scanning}
+            className="bg-white text-warm-brown px-3 py-1.5 rounded-full text-sm font-bold flex items-center gap-1 disabled:opacity-50">
+            {scanning ? (langCode === "ko" ? "..." : "...") : (langCode === "ko" ? "\uD83D\uDCF7 촬영" : "\uD83D\uDCF7 Scan")}
+          </button>
+          <button onClick={() => { setDraft({}); setAdding(true); }} className="bg-coral text-white px-3 py-1.5 rounded-full text-sm font-bold">+ {t.add}</button>
         </div>
 
-        {/* Add Form */}
+        {scanning && (
+          <div className="bg-coral/10 mx-3 mt-2 rounded-xl p-3 text-center text-coral font-bold animate-pulse">
+            {langCode === "ko" ? "\uD83D\uDCF8 사진에서 정보를 읽고 있어요..." : "\uD83D\uDCF8 Reading info from photo..."}
+          </div>
+        )}
+
         {adding && (
           <div className="bg-white mx-3 mt-3 rounded-2xl p-4 shadow-sm border border-warm-gray-light/20">
             {fields.map((f) => (
@@ -210,7 +268,7 @@ export default function HealthWalletPage({ onClose, userId, langCode = "ko" }: P
                 <label className="block text-sm font-semibold text-warm-brown mb-1">{f.label}</label>
                 {f.type === "select" ? (
                   <select value={draft[f.key] || ""} onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })} className="w-full border border-warm-gray-light/30 rounded-xl px-3 py-2 text-base">
-                    <option value="">—</option>
+                    <option value="">-</option>
                     {(f.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
                 ) : (
@@ -225,7 +283,6 @@ export default function HealthWalletPage({ onClose, userId, langCode = "ko" }: P
           </div>
         )}
 
-        {/* List */}
         <div className="flex-1 overflow-auto px-3 py-2">
           {items.length === 0 && !adding ? (
             <div className="text-center text-warm-gray-light py-12 text-lg">{t.noData}</div>
@@ -233,7 +290,7 @@ export default function HealthWalletPage({ onClose, userId, langCode = "ko" }: P
             items.map((item) => (
               <div key={item.id as string} className="bg-white rounded-2xl p-4 mb-2 shadow-sm border border-warm-gray-light/10 flex items-center">
                 <div className="flex-1 text-warm-brown text-base font-medium">{displayValue(item, activeSection)}</div>
-                <button onClick={() => handleDelete(activeSection, item.id as string)} className="text-red-400 text-sm font-bold ml-2 px-2 py-1">✕</button>
+                <button onClick={() => handleDelete(activeSection, item.id as string)} className="text-red-400 text-sm font-bold ml-2 px-2 py-1">{"\u2715"}</button>
               </div>
             ))
           )}
@@ -242,12 +299,10 @@ export default function HealthWalletPage({ onClose, userId, langCode = "ko" }: P
     );
   }
 
-  /* ── Main Grid ── */
   return (
     <div className="flex flex-col h-screen bg-cream">
-      {/* Header */}
       <div className="bg-warm-brown text-cream px-4 py-3 flex items-center gap-3">
-        <button onClick={onClose} className="text-xl">←</button>
+        <button onClick={onClose} className="text-xl">&#8592;</button>
         <h1 className="text-xl font-bold flex-1">{t.title}</h1>
       </div>
 
@@ -271,4 +326,5 @@ export default function HealthWalletPage({ onClose, userId, langCode = "ko" }: P
         </div>
       )}
     </div>
-  )
+  );
+}
