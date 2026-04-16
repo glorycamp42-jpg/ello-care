@@ -1,284 +1,111 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 
 /* ── i18n ── */
 const I18N: Record<string, Record<string, string>> = {
-  ko: {
-    title: "고향",
-    back: "← 돌아가기",
-    radio: "라디오",
-    music: "옛날 가요",
-    video: "영상",
-    trot: "트로트 명곡",
-    pop7080: "7080 가요",
-    ballad: "발라드",
-    hymn: "찬송가",
-    nostalgia: "추억 영상",
-    hometown: "고향 풍경",
-    exercise: "건강 체조",
-    openPlayer: "듣기",
-    watchOn: "보기",
-  },
-  en: {
-    title: "Homeland",
-    back: "← Back",
-    radio: "Radio",
-    music: "Old Songs",
-    video: "Videos",
-    trot: "Trot Classics",
-    pop7080: "70s-80s K-Pop",
-    ballad: "Ballads",
-    hymn: "Hymns",
-    nostalgia: "Nostalgic Clips",
-    hometown: "Hometown Views",
-    exercise: "Health Exercise",
-    openPlayer: "Listen",
-    watchOn: "Watch",
-  },
-  es: {
-    title: "Hogar",
-    back: "← Volver",
-    radio: "Radio",
-    music: "Canciones",
-    video: "Videos",
-    trot: "Trot Clásico",
-    pop7080: "K-Pop 70s-80s",
-    ballad: "Baladas",
-    hymn: "Himnos",
-    nostalgia: "Clips Nostálgicos",
-    hometown: "Paisajes del Hogar",
-    exercise: "Ejercicio",
-    openPlayer: "Escuchar",
-    watchOn: "Ver",
-  },
-  zh: {
-    title: "故乡",
-    back: "← 返回",
-    radio: "广播",
-    music: "老歌",
-    video: "视频",
-    trot: "Trot经典",
-    pop7080: "7080流行",
-    ballad: "抒情歌",
-    hymn: "赞美诗",
-    nostalgia: "怀旧视频",
-    hometown: "故乡风景",
-    exercise: "健康操",
-    openPlayer: "收听",
-    watchOn: "观看",
-  },
-  vi: {
-    title: "Quê hương",
-    back: "← Quay lại",
-    radio: "Radio",
-    music: "Nhạc cũ",
-    video: "Video",
-    trot: "Trot cổ điển",
-    pop7080: "K-Pop 7080",
-    ballad: "Ballad",
-    hymn: "Thánh ca",
-    nostalgia: "Clip hoài niệm",
-    hometown: "Phong cảnh quê",
-    exercise: "Thể dục",
-    openPlayer: "Nghe",
-    watchOn: "Xem",
-  },
-  ja: {
-    title: "故郷",
-    back: "← 戻る",
-    radio: "ラジオ",
-    music: "懐メロ",
-    video: "映像",
-    trot: "トロット名曲",
-    pop7080: "7080歌謡",
-    ballad: "バラード",
-    hymn: "讃美歌",
-    nostalgia: "思い出映像",
-    hometown: "故郷の風景",
-    exercise: "健康体操",
-    openPlayer: "聴く",
-    watchOn: "見る",
-  },
+  ko: { title: "고향", back: "← 돌아가기", radio: "라디오", music: "옛날 가요", video: "영상",
+    trot: "트로트", pop7080: "7080", ballad: "발라드", hymn: "찬송가",
+    nostalgia: "추억", hometown: "고향풍경", exercise: "건강체조",
+    playing: "재생 중", stopped: "정지됨", loading: "로딩 중...", tapToPlay: "터치하면 재생" },
+  en: { title: "Homeland", back: "← Back", radio: "Radio", music: "Songs", video: "Videos",
+    trot: "Trot", pop7080: "7080", ballad: "Ballad", hymn: "Hymns",
+    nostalgia: "Nostalgia", hometown: "Hometown", exercise: "Exercise",
+    playing: "Playing", stopped: "Stopped", loading: "Loading...", tapToPlay: "Tap to play" },
+  es: { title: "Hogar", back: "← Volver", radio: "Radio", music: "Canciones", video: "Videos",
+    trot: "Trot", pop7080: "7080", ballad: "Balada", hymn: "Himnos",
+    nostalgia: "Nostalgia", hometown: "Paisajes", exercise: "Ejercicio",
+    playing: "Reproduciendo", stopped: "Detenido", loading: "Cargando...", tapToPlay: "Toca para reproducir" },
+  zh: { title: "故乡", back: "← 返回", radio: "广播", music: "老歌", video: "视频",
+    trot: "Trot", pop7080: "7080", ballad: "抒情", hymn: "赞美诗",
+    nostalgia: "怀旧", hometown: "故乡", exercise: "健康操",
+    playing: "播放中", stopped: "已停止", loading: "加载中...", tapToPlay: "点击播放" },
+  vi: { title: "Quê hương", back: "← Quay lại", radio: "Radio", music: "Nhạc cũ", video: "Video",
+    trot: "Trot", pop7080: "7080", ballad: "Ballad", hymn: "Thánh ca",
+    nostalgia: "Hoài niệm", hometown: "Quê hương", exercise: "Thể dục",
+    playing: "Đang phát", stopped: "Đã dừng", loading: "Đang tải...", tapToPlay: "Nhấn để phát" },
+  ja: { title: "故郷", back: "← 戻る", radio: "ラジオ", music: "懐メロ", video: "映像",
+    trot: "トロット", pop7080: "7080", ballad: "バラード", hymn: "讃美歌",
+    nostalgia: "思い出", hometown: "故郷", exercise: "体操",
+    playing: "再生中", stopped: "停止", loading: "読み込み中...", tapToPlay: "タップして再生" },
 };
 
-/* ── Radio Stations (all open official web players) ── */
+/* ── Radio stations (using our proxy) ── */
 interface RadioStation {
+  id: string;
   nameKo: string;
-  nameEn: string;
-  playerUrl: string;
   emoji: string;
 }
-
 const RADIO_STATIONS: RadioStation[] = [
-  {
-    nameKo: "KBS 1라디오",
-    nameEn: "KBS 1Radio",
-    playerUrl: "https://kong.kbs.co.kr/live/radio?id=21",
-    emoji: "📻",
-  },
-  {
-    nameKo: "KBS 클래식FM",
-    nameEn: "KBS Classic FM",
-    playerUrl: "https://kong.kbs.co.kr/live/radio?id=24",
-    emoji: "🎻",
-  },
-  {
-    nameKo: "KBS 쿨FM",
-    nameEn: "KBS Cool FM",
-    playerUrl: "https://kong.kbs.co.kr/live/radio?id=22",
-    emoji: "😎",
-  },
-  {
-    nameKo: "MBC 표준FM",
-    nameEn: "MBC Standard FM",
-    playerUrl: "https://mini.imbc.com/",
-    emoji: "📻",
-  },
-  {
-    nameKo: "MBC FM4U",
-    nameEn: "MBC FM4U",
-    playerUrl: "https://mini.imbc.com/",
-    emoji: "🎵",
-  },
-  {
-    nameKo: "SBS 러브FM",
-    nameEn: "SBS Love FM",
-    playerUrl: "https://www.sbs.co.kr/radio/lovefm",
-    emoji: "❤️",
-  },
-  {
-    nameKo: "SBS 파워FM",
-    nameEn: "SBS Power FM",
-    playerUrl: "https://www.sbs.co.kr/radio/powerfm",
-    emoji: "⚡",
-  },
-  {
-    nameKo: "CBS 표준FM",
-    nameEn: "CBS Standard FM",
-    playerUrl: "https://www.cbs.co.kr/radio",
-    emoji: "✝️",
-  },
-  {
-    nameKo: "CBS 음악FM",
-    nameEn: "CBS Music FM",
-    playerUrl: "https://www.cbs.co.kr/radio/programList?media=radio001",
-    emoji: "🎶",
-  },
-  {
-    nameKo: "라디오 코리아 AM1540",
-    nameEn: "Radio Korea AM1540",
-    playerUrl: "https://www.radiokorea.com",
-    emoji: "🇺🇸",
-  },
+  { id: "kbs1", nameKo: "KBS 1라디오", emoji: "📻" },
+  { id: "kbsclassic", nameKo: "KBS 클래식FM", emoji: "🎻" },
+  { id: "kbscool", nameKo: "KBS 쿨FM", emoji: "😎" },
+  { id: "kbshappy", nameKo: "KBS 해피FM", emoji: "😊" },
+  { id: "mbcsfm", nameKo: "MBC 표준FM", emoji: "📻" },
+  { id: "mbcfm4u", nameKo: "MBC FM4U", emoji: "🎵" },
+  { id: "sbslove", nameKo: "SBS 러브FM", emoji: "❤️" },
+  { id: "sbspower", nameKo: "SBS 파워FM", emoji: "⚡" },
+  { id: "cbsfm", nameKo: "CBS 표준FM", emoji: "✝️" },
+  { id: "cbsmusic", nameKo: "CBS 음악FM", emoji: "🎶" },
 ];
 
-/* ── Music: YouTube search queries (always works, no video ID needed) ── */
-interface MusicItem {
-  title: string;
-  searchQuery: string;
-}
+/* ── Music / Video items ── */
+interface MediaItem { title: string; query: string; }
+interface MediaCategory { id: string; items: MediaItem[]; }
 
-interface MusicCategory {
-  id: string;
-  items: MusicItem[];
-}
-
-const MUSIC_DATA: MusicCategory[] = [
-  {
-    id: "trot",
-    items: [
-      { title: "나훈아 - 테스형", searchQuery: "나훈아 테스형 공식" },
-      { title: "나훈아 - 잡초", searchQuery: "나훈아 잡초" },
-      { title: "이미자 - 동백아가씨", searchQuery: "이미자 동백아가씨" },
-      { title: "패티김 - 사랑하는 마리아", searchQuery: "패티김 사랑하는 마리아" },
-      { title: "남진 - 님과 함께", searchQuery: "남진 님과 함께" },
-      { title: "송대관 - 네 박자", searchQuery: "송대관 네박자" },
-      { title: "태진아 - 사랑은 아무나 하나", searchQuery: "태진아 사랑은 아무나 하나" },
-      { title: "주현미 - 짝사랑", searchQuery: "주현미 짝사랑" },
-      { title: "설운도 - 보릿고개", searchQuery: "설운도 보릿고개" },
-      { title: "진성 - 안동역에서", searchQuery: "진성 안동역에서" },
-      { title: "트로트 명곡 메들리 1시간", searchQuery: "트로트 명곡 모음 메들리 1시간" },
-    ],
-  },
-  {
-    id: "pop7080",
-    items: [
-      { title: "이문세 - 소녀", searchQuery: "이문세 소녀" },
-      { title: "이문세 - 광화문 연가", searchQuery: "이문세 광화문연가" },
-      { title: "조용필 - 킬리만자로의 표범", searchQuery: "조용필 킬리만자로의 표범" },
-      { title: "조용필 - 바운스", searchQuery: "조용필 바운스" },
-      { title: "이선희 - 알고 싶어요", searchQuery: "이선희 알고싶어요" },
-      { title: "변진섭 - 너에게로 또 다시", searchQuery: "변진섭 너에게로 또다시" },
-      { title: "신승훈 - 보이지 않는 사랑", searchQuery: "신승훈 보이지않는 사랑" },
-      { title: "김광석 - 서른 즈음에", searchQuery: "김광석 서른즈음에" },
-      { title: "들국화 - 그것만이 내 세상", searchQuery: "들국화 그것만이 내세상" },
-      { title: "산울림 - 아니 벌써", searchQuery: "산울림 아니벌써" },
-      { title: "7080 가요 메들리 1시간", searchQuery: "7080 추억의 가요 모음 1시간" },
-    ],
-  },
-  {
-    id: "ballad",
-    items: [
-      { title: "이소라 - 바람이 분다", searchQuery: "이소라 바람이 분다" },
-      { title: "김동률 - 감사", searchQuery: "김동률 감사" },
-      { title: "박효신 - 숨", searchQuery: "박효신 숨" },
-      { title: "성시경 - 거리에서", searchQuery: "성시경 거리에서" },
-      { title: "이적 - 하늘을 달리다", searchQuery: "이적 하늘을 달리다" },
-      { title: "양희은 - 아침이슬", searchQuery: "양희은 아침이슬" },
-      { title: "유재하 - 사랑하기 때문에", searchQuery: "유재하 사랑하기 때문에" },
-      { title: "발라드 명곡 메들리 1시간", searchQuery: "한국 발라드 명곡 모음 1시간" },
-    ],
-  },
-  {
-    id: "hymn",
-    items: [
-      { title: "주 하나님 지으신 모든 세계", searchQuery: "찬송가 주 하나님 지으신 모든 세계" },
-      { title: "나 같은 죄인 살리신 (Amazing Grace)", searchQuery: "찬송가 나같은 죄인 살리신" },
-      { title: "예수 사랑하심은", searchQuery: "찬송가 예수 사랑하심은" },
-      { title: "내 주를 가까이 하게 함은", searchQuery: "찬송가 내주를 가까이 하게 함은" },
-      { title: "저 높은 곳을 향하여", searchQuery: "찬송가 저 높은곳을 향하여" },
-      { title: "찬송가 연속 듣기 1시간", searchQuery: "찬송가 모음 연속듣기 1시간" },
-    ],
-  },
+const MUSIC_DATA: MediaCategory[] = [
+  { id: "trot", items: [
+    { title: "나훈아 - 테스형", query: "나훈아 테스형 공식" },
+    { title: "나훈아 - 잡초", query: "나훈아 잡초 공식" },
+    { title: "이미자 - 동백아가씨", query: "이미자 동백아가씨" },
+    { title: "패티김 - 사랑하는 마리아", query: "패티김 사랑하는 마리아" },
+    { title: "남진 - 님과 함께", query: "남진 님과 함께" },
+    { title: "송대관 - 네 박자", query: "송대관 네박자" },
+    { title: "태진아 - 사랑은 아무나 하나", query: "태진아 사랑은 아무나 하나" },
+    { title: "주현미 - 짝사랑", query: "주현미 짝사랑" },
+    { title: "트로트 명곡 메들리 1시간", query: "트로트 명곡 모음 메들리 1시간" },
+  ]},
+  { id: "pop7080", items: [
+    { title: "이문세 - 소녀", query: "이문세 소녀" },
+    { title: "이문세 - 광화문 연가", query: "이문세 광화문연가" },
+    { title: "조용필 - 킬리만자로의 표범", query: "조용필 킬리만자로의 표범" },
+    { title: "이선희 - 알고 싶어요", query: "이선희 알고싶어요" },
+    { title: "변진섭 - 너에게로 또 다시", query: "변진섭 너에게로 또다시" },
+    { title: "김광석 - 서른 즈음에", query: "김광석 서른즈음에" },
+    { title: "7080 가요 메들리 1시간", query: "7080 추억의 가요 모음 1시간" },
+  ]},
+  { id: "ballad", items: [
+    { title: "이소라 - 바람이 분다", query: "이소라 바람이 분다" },
+    { title: "박효신 - 숨", query: "박효신 숨" },
+    { title: "성시경 - 거리에서", query: "성시경 거리에서" },
+    { title: "양희은 - 아침이슬", query: "양희은 아침이슬" },
+    { title: "발라드 명곡 메들리 1시간", query: "한국 발라드 명곡 모음 1시간" },
+  ]},
+  { id: "hymn", items: [
+    { title: "주 하나님 지으신 모든 세계", query: "찬송가 주 하나님 지으신 모든 세계" },
+    { title: "나 같은 죄인 살리신", query: "찬송가 나같은 죄인 살리신" },
+    { title: "예수 사랑하심은", query: "찬송가 예수 사랑하심은" },
+    { title: "찬송가 연속 듣기 1시간", query: "찬송가 모음 연속듣기 1시간" },
+  ]},
 ];
 
-/* ── Video Categories ── */
-const VIDEO_DATA: MusicCategory[] = [
-  {
-    id: "nostalgia",
-    items: [
-      { title: "1980년대 서울 거리 풍경", searchQuery: "1980년대 서울 거리 풍경 옛날" },
-      { title: "추억의 TV 광고 모음", searchQuery: "추억의 옛날 TV 광고 모음 80년대 90년대" },
-      { title: "옛날 시장 구경", searchQuery: "한국 옛날 전통시장 풍경" },
-      { title: "추억의 TV 프로그램", searchQuery: "추억의 TV 프로그램 80년대 90년대 모음" },
-    ],
-  },
-  {
-    id: "hometown",
-    items: [
-      { title: "한국의 아름다운 사계절", searchQuery: "한국 아름다운 사계절 풍경 4K" },
-      { title: "시골 풍경 힐링 영상", searchQuery: "한국 시골 풍경 힐링 자연 소리" },
-      { title: "전통시장 이모저모", searchQuery: "한국 전통시장 맛집 투어" },
-      { title: "제주도 풍경", searchQuery: "제주도 아름다운 풍경 4K 힐링" },
-    ],
-  },
-  {
-    id: "exercise",
-    items: [
-      { title: "어르신 아침 체조", searchQuery: "어르신 아침 체조 따라하기" },
-      { title: "치매 예방 손가락 운동", searchQuery: "치매예방 손가락 운동 따라하기" },
-      { title: "앉아서 하는 스트레칭", searchQuery: "앉아서 하는 스트레칭 어르신" },
-      { title: "국민체조", searchQuery: "국민체조 따라하기" },
-    ],
-  },
+const VIDEO_DATA: MediaCategory[] = [
+  { id: "nostalgia", items: [
+    { title: "1980년대 서울 거리", query: "1980년대 서울 거리 풍경 옛날" },
+    { title: "추억의 TV 광고", query: "추억의 옛날 TV 광고 모음 80년대" },
+    { title: "추억의 TV 프로그램", query: "추억의 TV 프로그램 80년대 90년대" },
+  ]},
+  { id: "hometown", items: [
+    { title: "한국의 사계절", query: "한국 아름다운 사계절 풍경 4K" },
+    { title: "시골 풍경 힐링", query: "한국 시골 풍경 힐링 자연소리" },
+    { title: "전통시장 구경", query: "한국 전통시장 맛집 투어" },
+  ]},
+  { id: "exercise", items: [
+    { title: "어르신 아침 체조", query: "어르신 아침 체조 따라하기" },
+    { title: "치매 예방 손가락 운동", query: "치매예방 손가락 운동 따라하기" },
+    { title: "국민체조", query: "국민체조 따라하기" },
+  ]},
 ];
-
-/* ── Helper: open YouTube search ── */
-function openYouTube(query: string) {
-  const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
-  window.open(url, "_blank");
-}
 
 /* ── Component ── */
 interface HomelandPageProps {
@@ -292,58 +119,193 @@ export default function HomelandPage({ onClose, langCode = "ko" }: HomelandPageP
   const [musicCat, setMusicCat] = useState("trot");
   const [videoCat, setVideoCat] = useState("nostalgia");
 
-  /* ── Tab button style ── */
+  // Radio state
+  const [playingRadio, setPlayingRadio] = useState<string | null>(null);
+  const [radioLoading, setRadioLoading] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const hlsRef = useRef<{ destroy: () => void } | null>(null);
+
+  // YouTube state
+  const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
+  const [videoLoading, setVideoLoading] = useState(false);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ""; }
+      if (hlsRef.current) { hlsRef.current.destroy(); }
+    };
+  }, []);
+
+  /* ── Radio playback via proxy ── */
+  const playRadio = useCallback(async (stationId: string) => {
+    // Stop current
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ""; }
+    if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+
+    // Toggle off
+    if (playingRadio === stationId) { setPlayingRadio(null); return; }
+
+    setRadioLoading(true);
+    setPlayingRadio(stationId);
+
+    try {
+      const proxyUrl = `/api/radio-proxy?station=${stationId}`;
+
+      // Check if it's MBC (returns JSON with streamUrl)
+      if (stationId.startsWith("mbc")) {
+        const res = await fetch(proxyUrl);
+        const data = await res.json();
+        if (data.streamUrl) {
+          const audio = new Audio(data.streamUrl);
+          audio.onerror = () => setPlayingRadio(null);
+          await audio.play();
+          audioRef.current = audio;
+        }
+      } else {
+        // HLS stream - try native first, then hls.js
+        const audio = document.createElement("audio");
+
+        if (audio.canPlayType("application/vnd.apple.mpegurl")) {
+          // Safari/iOS native HLS support
+          audio.src = proxyUrl;
+          await audio.play();
+          audioRef.current = audio;
+        } else {
+          // Use hls.js for other browsers
+          const Hls = (await import("hls.js")).default;
+          if (Hls.isSupported()) {
+            const hls = new Hls({
+              enableWorker: false,
+              lowLatencyMode: true,
+            });
+            hls.loadSource(proxyUrl);
+            hls.attachMedia(audio);
+            hls.on(Hls.Events.MANIFEST_PARSED, async () => {
+              try { await audio.play(); } catch { setPlayingRadio(null); }
+            });
+            hls.on(Hls.Events.ERROR, (_event: string, data: { fatal: boolean }) => {
+              if (data.fatal) { setPlayingRadio(null); hls.destroy(); }
+            });
+            audioRef.current = audio;
+            hlsRef.current = hls;
+          }
+        }
+      }
+    } catch {
+      setPlayingRadio(null);
+    }
+    setRadioLoading(false);
+  }, [playingRadio]);
+
+  const stopRadio = useCallback(() => {
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ""; }
+    if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+    setPlayingRadio(null);
+  }, []);
+
+  /* ── YouTube: search and play in-app ── */
+  const playYouTube = useCallback(async (query: string) => {
+    setVideoLoading(true);
+    setCurrentVideoId(null);
+    // Stop radio if playing
+    if (playingRadio) stopRadio();
+
+    try {
+      const res = await fetch(`/api/youtube-search?q=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      if (data.videoId) {
+        setCurrentVideoId(data.videoId);
+      }
+    } catch { /* ignore */ }
+    setVideoLoading(false);
+  }, [playingRadio, stopRadio]);
+
+  /* ── Styles ── */
   const tabBtn = (active: boolean) =>
-    `flex-1 py-3 text-center text-[16px] font-bold rounded-xl transition-all ${
-      active
-        ? "bg-coral text-white shadow-md"
-        : "bg-warm-white text-warm-gray hover:bg-coral-pastel"
+    `flex-1 py-3 text-center text-[15px] font-bold rounded-xl transition-all ${
+      active ? "bg-coral text-white shadow-md" : "bg-warm-white text-warm-gray hover:bg-coral-pastel"
     }`;
 
   return (
     <div className="min-h-screen bg-cream flex flex-col">
       {/* Header */}
       <header className="bg-warm-white border-b border-warm-gray-light/15 px-4 pt-12 pb-3 flex items-center justify-between">
-        <button onClick={onClose} className="text-warm-gray text-sm font-medium">
-          {t.back}
-        </button>
+        <button onClick={onClose} className="text-warm-gray text-sm font-medium">{t.back}</button>
         <h1 className="text-lg font-bold text-warm-gray">{t.title}</h1>
         <div className="w-16" />
       </header>
 
       {/* Sub-tabs */}
-      <div className="px-4 pt-4 pb-2 flex gap-2">
-        <button className={tabBtn(tab === "radio")} onClick={() => setTab("radio")}>
-          📻 {t.radio}
-        </button>
-        <button className={tabBtn(tab === "music")} onClick={() => setTab("music")}>
-          🎵 {t.music}
-        </button>
-        <button className={tabBtn(tab === "video")} onClick={() => setTab("video")}>
-          📺 {t.video}
-        </button>
+      <div className="px-4 pt-3 pb-2 flex gap-2">
+        <button className={tabBtn(tab === "radio")} onClick={() => setTab("radio")}>📻 {t.radio}</button>
+        <button className={tabBtn(tab === "music")} onClick={() => setTab("music")}>🎵 {t.music}</button>
+        <button className={tabBtn(tab === "video")} onClick={() => setTab("video")}>📺 {t.video}</button>
       </div>
+
+      {/* Mini player bar for radio */}
+      {playingRadio && (
+        <div className="mx-4 mb-2 p-3 bg-blue-50 rounded-xl flex items-center justify-between border border-blue-200 animate-pulse-slow">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">📻</span>
+            <div>
+              <p className="text-[14px] font-bold text-blue-700">
+                {RADIO_STATIONS.find(s => s.id === playingRadio)?.nameKo}
+              </p>
+              <p className="text-[11px] text-blue-500">{t.playing}</p>
+            </div>
+          </div>
+          <button onClick={stopRadio}
+            className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center text-red-600 text-xl active:scale-95">
+            ⏹
+          </button>
+        </div>
+      )}
+
+      {/* YouTube player (shows when video is loaded) */}
+      {currentVideoId && (tab === "music" || tab === "video") && (
+        <div className="mx-4 mb-3 rounded-2xl overflow-hidden shadow-lg bg-black">
+          <div className="relative w-full" style={{ paddingBottom: "56.25%" }}>
+            <iframe
+              className="absolute inset-0 w-full h-full"
+              src={`https://www.youtube.com/embed/${currentVideoId}?autoplay=1&rel=0&playsinline=1`}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+              title="Player"
+            />
+          </div>
+        </div>
+      )}
+
+      {videoLoading && (
+        <div className="mx-4 mb-3 p-6 bg-warm-white rounded-2xl text-center">
+          <p className="text-warm-gray text-[15px] animate-pulse">{t.loading}</p>
+        </div>
+      )}
 
       {/* Content area */}
       <div className="flex-1 overflow-y-auto px-4 pb-8">
+
         {/* ── RADIO TAB ── */}
         {tab === "radio" && (
-          <div className="space-y-3 pt-2">
+          <div className="space-y-3 pt-1">
             {RADIO_STATIONS.map((station) => (
               <button
-                key={station.nameKo}
-                onClick={() => window.open(station.playerUrl, "_blank")}
-                className="w-full p-4 rounded-2xl text-left flex items-center justify-between bg-warm-white border border-warm-gray-light/15 hover:border-coral/30 active:scale-[0.98] transition-all"
+                key={station.id}
+                onClick={() => playRadio(station.id)}
+                disabled={radioLoading}
+                className={`w-full p-4 rounded-2xl text-left flex items-center justify-between transition-all active:scale-[0.98] ${
+                  playingRadio === station.id
+                    ? "bg-blue-100 border-2 border-blue-400 shadow-md"
+                    : "bg-warm-white border border-warm-gray-light/15"
+                }`}
               >
                 <div className="flex items-center gap-3">
                   <span className="text-2xl">{station.emoji}</span>
-                  <div>
-                    <p className="text-[16px] font-bold text-warm-gray">{station.nameKo}</p>
-                    <p className="text-[12px] text-warm-gray-light">{station.nameEn}</p>
-                  </div>
+                  <p className="text-[16px] font-bold text-warm-gray">{station.nameKo}</p>
                 </div>
-                <span className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-full text-[13px] font-bold">
-                  {t.openPlayer} ▶
+                <span className="text-2xl">
+                  {playingRadio === station.id ? "🔊" : "▶️"}
                 </span>
               </button>
             ))}
@@ -352,36 +314,23 @@ export default function HomelandPage({ onClose, langCode = "ko" }: HomelandPageP
 
         {/* ── MUSIC TAB ── */}
         {tab === "music" && (
-          <div className="pt-2">
-            {/* Category pills */}
-            <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
+          <div>
+            <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
               {(["trot", "pop7080", "ballad", "hymn"] as const).map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setMusicCat(cat)}
-                  className={`px-4 py-2 rounded-full text-[14px] font-bold whitespace-nowrap transition-all ${
-                    musicCat === cat
-                      ? "bg-coral text-white shadow-md"
-                      : "bg-warm-white text-warm-gray border border-warm-gray-light/15"
-                  }`}
-                >
+                <button key={cat} onClick={() => { setMusicCat(cat); setCurrentVideoId(null); }}
+                  className={`px-4 py-2 rounded-full text-[14px] font-bold whitespace-nowrap ${
+                    musicCat === cat ? "bg-coral text-white shadow-md" : "bg-warm-white text-warm-gray border border-warm-gray-light/15"
+                  }`}>
                   {t[cat]}
                 </button>
               ))}
             </div>
-
-            {/* Song list */}
             <div className="space-y-2">
-              {MUSIC_DATA.find((c) => c.id === musicCat)?.items.map((item) => (
-                <button
-                  key={item.searchQuery}
-                  onClick={() => openYouTube(item.searchQuery)}
-                  className="w-full p-4 rounded-2xl text-left flex items-center justify-between bg-warm-white border border-warm-gray-light/15 hover:border-coral/30 active:scale-[0.98] transition-all"
-                >
+              {MUSIC_DATA.find(c => c.id === musicCat)?.items.map((item) => (
+                <button key={item.query} onClick={() => playYouTube(item.query)}
+                  className="w-full p-4 rounded-2xl text-left flex items-center justify-between bg-warm-white border border-warm-gray-light/15 active:scale-[0.98] transition-all">
                   <p className="text-[15px] font-semibold text-warm-gray flex-1">{item.title}</p>
-                  <span className="px-3 py-1.5 bg-red-100 text-red-600 rounded-full text-[12px] font-bold ml-2 whitespace-nowrap">
-                    ▶ YouTube
-                  </span>
+                  <span className="text-xl ml-2">▶️</span>
                 </button>
               ))}
             </div>
@@ -390,36 +339,23 @@ export default function HomelandPage({ onClose, langCode = "ko" }: HomelandPageP
 
         {/* ── VIDEO TAB ── */}
         {tab === "video" && (
-          <div className="pt-2">
-            {/* Category pills */}
-            <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
+          <div>
+            <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
               {(["nostalgia", "hometown", "exercise"] as const).map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setVideoCat(cat)}
-                  className={`px-4 py-2 rounded-full text-[14px] font-bold whitespace-nowrap transition-all ${
-                    videoCat === cat
-                      ? "bg-coral text-white shadow-md"
-                      : "bg-warm-white text-warm-gray border border-warm-gray-light/15"
-                  }`}
-                >
+                <button key={cat} onClick={() => { setVideoCat(cat); setCurrentVideoId(null); }}
+                  className={`px-4 py-2 rounded-full text-[14px] font-bold whitespace-nowrap ${
+                    videoCat === cat ? "bg-coral text-white shadow-md" : "bg-warm-white text-warm-gray border border-warm-gray-light/15"
+                  }`}>
                   {t[cat]}
                 </button>
               ))}
             </div>
-
-            {/* Video list */}
             <div className="space-y-2">
-              {VIDEO_DATA.find((c) => c.id === videoCat)?.items.map((item) => (
-                <button
-                  key={item.searchQuery}
-                  onClick={() => openYouTube(item.searchQuery)}
-                  className="w-full p-4 rounded-2xl text-left flex items-center justify-between bg-warm-white border border-warm-gray-light/15 hover:border-coral/30 active:scale-[0.98] transition-all"
-                >
+              {VIDEO_DATA.find(c => c.id === videoCat)?.items.map((item) => (
+                <button key={item.query} onClick={() => playYouTube(item.query)}
+                  className="w-full p-4 rounded-2xl text-left flex items-center justify-between bg-warm-white border border-warm-gray-light/15 active:scale-[0.98] transition-all">
                   <p className="text-[15px] font-semibold text-warm-gray flex-1">{item.title}</p>
-                  <span className="px-3 py-1.5 bg-red-100 text-red-600 rounded-full text-[12px] font-bold ml-2 whitespace-nowrap">
-                    ▶ YouTube
-                  </span>
+                  <span className="text-xl ml-2">▶️</span>
                 </button>
               ))}
             </div>
