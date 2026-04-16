@@ -1091,10 +1091,3 @@ function SettingsMenu({ onChangeCharacter }: { onChangeCharacter: () => void }) 
     </div>
   );
 }
-00%", padding: "12px 16px",
-                fontSize: 14, color: "#EF4444", background: "none", border: "none",
-                textAlign: "left", cursor: "pointer",
-              }}
-            >
-              로그아웃
-     
