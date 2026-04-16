@@ -191,7 +191,7 @@ export default function HealthWalletPage({ onClose, userId, langCode = "ko" }: P
           // 저장 실패 시 수동 편집 모드로
           setDraft(result.fields);
           setAdding(true);
-          alert(langCode === "ko" ? "저장 실패. 확인 후 저장 버튼을 눌러주세요." : "Save failed. Please review and press save.");
+          alert((langCode === "ko" ? "저장 실패: " : "Save failed: ") + saveJson.error);
         } else {
           fetchAll();
           alert(langCode === "ko" ? "사진에서 정보를 저장했어요!" : "Info saved from photo!");
@@ -343,4 +343,3 @@ export default function HealthWalletPage({ onClose, userId, langCode = "ko" }: P
     </div>
   );
 }
-     
