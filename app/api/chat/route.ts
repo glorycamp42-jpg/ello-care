@@ -993,6 +993,34 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── Load Health Wallet data for context ──
+    let healthContext = "";
+    if (elderId !== "default" && adminDb) {
+      try {
+        const [meds, allergies, diagnoses, doctors, insurance, emergency] = await Promise.all([
+          adminDb.from("health_medications").select("name, dosage, frequency, purpose").eq("user_id", elderId).eq("is_active", true),
+          adminDb.from("health_allergies").select("allergen, type, severity").eq("user_id", elderId),
+          adminDb.from("health_diagnoses").select("name, icd_code").eq("user_id", elderId).eq("is_active", true),
+          adminDb.from("health_doctors").select("name, specialty, phone, is_pcp").eq("user_id", elderId),
+          adminDb.from("health_insurance_cards").select("carrier, member_id, plan_name").eq("user_id", elderId),
+          adminDb.from("health_emergency_contacts").select("name, relationship, phone").eq("user_id", elderId),
+        ]);
+        const parts: string[] = [];
+        if (meds.data?.length) parts.push("Medications: " + meds.data.map((m: Record<string, string>) => `${m.name} ${m.dosage} (${m.frequency}, ${m.purpose})`).join("; "));
+        if (allergies.data?.length) parts.push("Allergies: " + allergies.data.map((a: Record<string, string>) => `${a.allergen} (${a.severity})`).join(", "));
+        if (diagnoses.data?.length) parts.push("Diagnoses: " + diagnoses.data.map((d: Record<string, string>) => d.name).join(", "));
+        if (doctors.data?.length) parts.push("Doctors: " + doctors.data.map((d: Record<string, string | boolean>) => `${d.name} (${d.specialty}${d.is_pcp ? ", PCP" : ""}) ${d.phone || ""}`).join("; "));
+        if (insurance.data?.length) parts.push("Insurance: " + insurance.data.map((i: Record<string, string>) => `${i.carrier} Member#${i.member_id}`).join("; "));
+        if (emergency.data?.length) parts.push("Emergency Contacts: " + emergency.data.map((e: Record<string, string>) => `${e.name} (${e.relationship}) ${e.phone}`).join("; "));
+        if (parts.length) {
+          healthContext = parts.join("\n");
+          console.log(`[chat] Loaded health wallet data for ${elderId}`);
+        }
+      } catch (e) {
+        console.warn("[chat] health wallet load failed:", e);
+      }
+    }
+
     const systemPrompt = `🚨 ABSOLUTE TIME AUTHORITY (HIGHEST PRIORITY — OVERRIDES ALL PRIOR CONVERSATION):
 The current real-world time RIGHT NOW is:
   📅 Date: ${laParts} (${laFull})
@@ -1033,7 +1061,11 @@ AUTO-SAVE IMPORTANT INFO: When the user mentions any of these, use save_memory t
 - Church, faith-related details: category="religion"
 Do NOT ask permission to save. Just save silently and continue the conversation naturally.
 
-When using tools, always present the results naturally in your designated language. Don't show raw data — summarize it warmly.`;
+When using tools, always present the results naturally in your designated language. Don't show raw data — summarize it warmly.
+
+${healthContext ? `HEALTH WALLET (user's private health data — use when they ask about medications, doctors, insurance, allergies, etc.):
+${healthContext}
+When answering health questions, use this data naturally. For example if asked "내 약 뭐야?" list their medications warmly. Only share what is relevant to the question.` : ""}`;
 
     console.log(`[chat] name=${charName}, persona=${personaId}, msgs=${messages.length}`);
 

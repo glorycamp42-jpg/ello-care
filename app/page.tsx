@@ -13,6 +13,7 @@ import HappinessGarden from "@/components/HappinessGarden";
 import RemindersPage from "@/components/RemindersPage";
 import BiblePage from "@/components/BiblePage";
 import SafetyPage from "@/components/SafetyPage";
+import HealthWalletPage from "@/components/HealthWalletPage";
 import { findContactByKeyword } from "@/components/SafetyPage";
 import LanguageSelect from "@/components/LanguageSelect";
 import { Language, getSavedLang } from "@/lib/i18n";
@@ -63,6 +64,7 @@ export default function Home() {
   const [showReminders, setShowReminders] = useState(false);
   const [showBible, setShowBible] = useState(false);
   const [showSafety, setShowSafety] = useState(false);
+  const [showHealthWallet, setShowHealthWallet] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -359,6 +361,9 @@ export default function Home() {
   if (showSafety) {
     return <SafetyPage onClose={() => setShowSafety(false)} langCode={lang?.code || getSavedLang().code} />;
   }
+  if (showHealthWallet) {
+    return <HealthWalletPage onClose={() => setShowHealthWallet(false)} userId={userId} langCode={lang?.code || getSavedLang().code} />;
+  }
 
   /* ── Helpers ── */
   function createRecognition(): SpeechRecognition | null {
@@ -456,6 +461,7 @@ export default function Home() {
     onShowReminders={() => setShowReminders(true)}
     onShowBible={() => setShowBible(true)}
     onShowSafety={() => setShowSafety(true)}
+    onShowHealthWallet={() => setShowHealthWallet(true)}
     onChangeLang={handleChangeLanguage}
     userCity={userCity}
     lang={lang || getSavedLang()}
@@ -486,6 +492,7 @@ interface ChatUIProps {
   onShowReminders: () => void;
   onShowBible: () => void;
   onShowSafety: () => void;
+  onShowHealthWallet: () => void;
   onChangeLang: () => void;
   userCity: string;
   lang: Language;
@@ -501,7 +508,7 @@ function ChatUI({
   lastAssistantText, setLastAssistantText,
   chatEndRef, recognitionRef, fileInputRef, messagesRef,
   playTTS, stopOrReplayTTS, createRecognition, onChangeCharacter,
-  tickets, onShowTickets, onShowReminders, onShowBible, onShowSafety, onChangeLang, userCity, lang, checkedIn, setCheckedIn, appointmentToast, setAppointmentToast, userId,
+  tickets, onShowTickets, onShowReminders, onShowBible, onShowSafety, onShowHealthWallet, onChangeLang, userCity, lang, checkedIn, setCheckedIn, appointmentToast, setAppointmentToast, userId,
 }: ChatUIProps) {
 
   // Save parsed memories to Supabase
@@ -990,6 +997,14 @@ function ChatUI({
               <line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
             <span className="text-[10px] font-medium">{lang.ui.safety}</span>
+          </button>
+
+          {/* 건강수첩 */}
+          <button onClick={onShowHealthWallet} className="flex flex-col items-center gap-0.5 min-w-[56px] py-1 text-warm-gray-light">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+            </svg>
+            <span className="text-[10px] font-medium">{lang.code === "ko" ? "건강수첩" : "Health"}</span>
           </button>
         </div>
       </nav>
