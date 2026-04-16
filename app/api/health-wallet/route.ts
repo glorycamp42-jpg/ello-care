@@ -29,14 +29,22 @@ function isValidTable(t: string): t is TableName {
   return TABLES.includes(t as TableName);
 }
 
-/* GET — fetch all data for a user */
+function cleanFields(fields: Record<string, unknown>): Record<string, unknown> {
+  const clean: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(fields)) {
+    if (v === null || v === undefined) continue;
+    if (typeof v === "string" && v.trim() === "") continue;
+    clean[k] = v;
+  }
+  return clean;
+}
+
 export async function GET(req: NextRequest) {
   const db = admin();
   const userId = req.nextUrl.searchParams.get("userId");
   const table = req.nextUrl.searchParams.get("table");
   if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 });
 
-  // Single table
   if (table) {
     if (!isValidTable(table)) return NextResponse.json({ error: "invalid table" }, { status: 400 });
     const { data, error } = await db.from(table).select("*").eq("user_id", userId).order("created_at", { ascending: false });
@@ -44,7 +52,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ [table]: data || [] });
   }
 
-  // All tables
   const result: Record<string, unknown[]> = {};
   for (const t of TABLES) {
     const { data } = await db.from(t).select("*").eq("user_id", userId).order("created_at", { ascending: false });
@@ -53,7 +60,6 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(result);
 }
 
-/* POST — insert a row */
 export async function POST(req: NextRequest) {
   const db = admin();
   try {
@@ -61,7 +67,9 @@ export async function POST(req: NextRequest) {
     const { table, ...fields } = body;
     if (!table || !isValidTable(table)) return NextResponse.json({ error: "invalid table" }, { status: 400 });
     if (!fields.user_id) return NextResponse.json({ error: "user_id required" }, { status: 400 });
-    const { data, error } = await db.from(table).insert(fields).select().single();
+    const clean = cleanFields(fields);
+    clean.user_id = fields.user_id;
+    const { data, error } = await db.from(table).insert(clean).select().single();
     if (error) throw error;
     return NextResponse.json({ ok: true, data });
   } catch (e: unknown) {
@@ -70,7 +78,6 @@ export async function POST(req: NextRequest) {
   }
 }
 
-/* PATCH — update a row */
 export async function PATCH(req: NextRequest) {
   const db = admin();
   try {
@@ -78,7 +85,8 @@ export async function PATCH(req: NextRequest) {
     const { table, id, ...fields } = body;
     if (!table || !isValidTable(table)) return NextResponse.json({ error: "invalid table" }, { status: 400 });
     if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
-    const { error } = await db.from(table).update(fields).eq("id", id);
+    const clean = cleanFields(fields);
+    const { error } = await db.from(table).update(clean).eq("id", id);
     if (error) throw error;
     return NextResponse.json({ ok: true });
   } catch (e: unknown) {
@@ -87,7 +95,6 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
-/* DELETE — remove a row */
 export async function DELETE(req: NextRequest) {
   const db = admin();
   try {
