@@ -31,24 +31,26 @@ const I18N: Record<string, Record<string, string>> = {
 };
 
 /* ══════════════════════════════════════
-   RADIO: iframe embed of official web players
+   RADIO: YouTube live stream search
+   Same embed as music — guaranteed to work
    ══════════════════════════════════════ */
 interface RadioStation {
   nameKo: string;
   emoji: string;
-  playerUrl: string; // Official web player URL (loaded in iframe)
+  searchQuery: string; // YouTube search query to find live stream
 }
 
 const RADIO_STATIONS: RadioStation[] = [
-  { nameKo: "KBS 1라디오", emoji: "📻", playerUrl: "https://kong.kbs.co.kr/live/radio?id=21" },
-  { nameKo: "KBS 클래식FM", emoji: "🎻", playerUrl: "https://kong.kbs.co.kr/live/radio?id=24" },
-  { nameKo: "KBS 쿨FM", emoji: "😎", playerUrl: "https://kong.kbs.co.kr/live/radio?id=22" },
-  { nameKo: "MBC 표준FM (mini)", emoji: "📻", playerUrl: "https://mini.imbc.com/" },
-  { nameKo: "MBC FM4U (mini)", emoji: "🎵", playerUrl: "https://mini.imbc.com/" },
-  { nameKo: "SBS 러브FM", emoji: "❤️", playerUrl: "https://www.sbs.co.kr/radio/lovefm" },
-  { nameKo: "SBS 파워FM", emoji: "⚡", playerUrl: "https://www.sbs.co.kr/radio/powerfm" },
-  { nameKo: "CBS 라디오", emoji: "✝️", playerUrl: "https://www.cbs.co.kr/radio" },
-  { nameKo: "라디오 코리아", emoji: "🇺🇸", playerUrl: "https://www.radiokorea.com" },
+  { nameKo: "KBS 1라디오", emoji: "📻", searchQuery: "KBS 1라디오 라이브 실시간" },
+  { nameKo: "KBS 클래식FM", emoji: "🎻", searchQuery: "KBS 클래식FM 라이브 실시간" },
+  { nameKo: "KBS 쿨FM", emoji: "😎", searchQuery: "KBS 쿨FM 라이브 실시간" },
+  { nameKo: "MBC 표준FM", emoji: "📻", searchQuery: "MBC 표준FM 라이브 실시간 보이는 라디오" },
+  { nameKo: "MBC FM4U", emoji: "🎵", searchQuery: "MBC FM4U 라이브 실시간 보이는 라디오" },
+  { nameKo: "SBS 러브FM", emoji: "❤️", searchQuery: "SBS 러브FM 실시간 라이브" },
+  { nameKo: "SBS 파워FM", emoji: "⚡", searchQuery: "SBS 파워FM 실시간 라이브 보이는 라디오" },
+  { nameKo: "CBS 기독교방송", emoji: "✝️", searchQuery: "CBS 기독교방송 라디오 실시간 라이브" },
+  { nameKo: "트로트 라디오 24시간", emoji: "🎶", searchQuery: "트로트 라디오 24시간 실시간 라이브" },
+  { nameKo: "7080 올드팝 라디오", emoji: "🎸", searchQuery: "7080 올드팝 24시간 라이브 스트리밍" },
 ];
 
 /* ══════════════════════════════════════
@@ -122,17 +124,16 @@ export default function HomelandPage({ onClose, langCode = "ko" }: HomelandPageP
   const [musicCat, setMusicCat] = useState("trot");
   const [videoCat, setVideoCat] = useState("nostalgia");
 
-  // Radio: which station's web player to show
-  const [activeRadio, setActiveRadio] = useState<RadioStation | null>(null);
-
-  // YouTube: video playing in-app
+  // YouTube: video/radio playing in-app (same player for everything)
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
   const [videoLoading, setVideoLoading] = useState(false);
+  const [nowPlayingLabel, setNowPlayingLabel] = useState<string | null>(null);
 
-  /* ── YouTube search → embed ── */
-  const playYouTube = useCallback(async (query: string) => {
+  /* ── YouTube search → embed (used for radio, music, and video) ── */
+  const playYouTube = useCallback(async (query: string, label?: string) => {
     setVideoLoading(true);
     setCurrentVideoId(null);
+    setNowPlayingLabel(label || null);
     try {
       const res = await fetch(`/api/youtube-search?q=${encodeURIComponent(query)}`);
       const data = await res.json();
@@ -146,31 +147,6 @@ export default function HomelandPage({ onClose, langCode = "ko" }: HomelandPageP
       active ? "bg-coral text-white shadow-md" : "bg-warm-white text-warm-gray"
     }`;
 
-  /* ══ RADIO: Station player view (iframe) ══ */
-  if (activeRadio) {
-    return (
-      <div className="min-h-screen bg-cream flex flex-col">
-        <header className="bg-warm-white border-b border-warm-gray-light/15 px-4 pt-12 pb-3 flex items-center justify-between">
-          <button onClick={() => setActiveRadio(null)} className="text-coral text-[15px] font-bold">
-            {t.backToList}
-          </button>
-          <h1 className="text-[16px] font-bold text-warm-gray">{activeRadio.emoji} {activeRadio.nameKo}</h1>
-          <button onClick={onClose} className="text-warm-gray text-sm">닫기</button>
-        </header>
-        <div className="flex-1">
-          <iframe
-            src={activeRadio.playerUrl}
-            className="w-full h-full border-0"
-            style={{ minHeight: "calc(100vh - 80px)" }}
-            allow="autoplay; encrypted-media"
-            sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
-            title={activeRadio.nameKo}
-          />
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-cream flex flex-col">
       {/* Header */}
@@ -182,22 +158,31 @@ export default function HomelandPage({ onClose, langCode = "ko" }: HomelandPageP
 
       {/* Sub-tabs */}
       <div className="px-4 pt-3 pb-2 flex gap-2">
-        <button className={tabBtn(tab === "radio")} onClick={() => { setTab("radio"); setCurrentVideoId(null); }}>📻 {t.radio}</button>
-        <button className={tabBtn(tab === "music")} onClick={() => { setTab("music"); setActiveRadio(null); }}>🎵 {t.music}</button>
-        <button className={tabBtn(tab === "video")} onClick={() => { setTab("video"); setActiveRadio(null); }}>📺 {t.video}</button>
+        <button className={tabBtn(tab === "radio")} onClick={() => setTab("radio")}>📻 {t.radio}</button>
+        <button className={tabBtn(tab === "music")} onClick={() => setTab("music")}>🎵 {t.music}</button>
+        <button className={tabBtn(tab === "video")} onClick={() => setTab("video")}>📺 {t.video}</button>
       </div>
 
-      {/* YouTube player (shows when video is loaded) */}
-      {currentVideoId && (tab === "music" || tab === "video") && (
-        <div className="mx-4 mb-3 rounded-2xl overflow-hidden shadow-lg bg-black">
-          <div className="relative w-full" style={{ paddingBottom: "56.25%" }}>
-            <iframe
-              className="absolute inset-0 w-full h-full"
-              src={`https://www.youtube.com/embed/${currentVideoId}?autoplay=1&rel=0&playsinline=1`}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-              title="Player"
-            />
+      {/* YouTube player (shows for radio, music, and video) */}
+      {currentVideoId && (
+        <div className="mx-4 mb-3">
+          {nowPlayingLabel && (
+            <div className="bg-blue-50 border border-blue-200 rounded-t-2xl px-4 py-2 flex items-center justify-between">
+              <p className="text-[14px] font-bold text-blue-700">📻 {nowPlayingLabel}</p>
+              <button onClick={() => { setCurrentVideoId(null); setNowPlayingLabel(null); }}
+                className="text-[12px] text-red-500 font-bold">⏹ 정지</button>
+            </div>
+          )}
+          <div className={`rounded-${nowPlayingLabel ? 'b' : ''}2xl overflow-hidden shadow-lg bg-black`}>
+            <div className="relative w-full" style={{ paddingBottom: "56.25%" }}>
+              <iframe
+                className="absolute inset-0 w-full h-full"
+                src={`https://www.youtube.com/embed/${currentVideoId}?autoplay=1&rel=0&playsinline=1`}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+                title="Player"
+              />
+            </div>
           </div>
         </div>
       )}
@@ -213,18 +198,24 @@ export default function HomelandPage({ onClose, langCode = "ko" }: HomelandPageP
         {/* ── RADIO TAB ── */}
         {tab === "radio" && (
           <div className="space-y-3 pt-1">
-            <p className="text-[13px] text-warm-gray-light text-center mb-2">{t.radioDesc}</p>
             {RADIO_STATIONS.map((station) => (
               <button
                 key={station.nameKo}
-                onClick={() => setActiveRadio(station)}
-                className="w-full p-5 rounded-2xl text-left flex items-center justify-between bg-warm-white border border-warm-gray-light/15 active:scale-[0.98] transition-all"
+                onClick={() => playYouTube(station.searchQuery, station.nameKo)}
+                disabled={videoLoading}
+                className={`w-full p-5 rounded-2xl text-left flex items-center justify-between transition-all active:scale-[0.98] ${
+                  nowPlayingLabel === station.nameKo
+                    ? "bg-blue-100 border-2 border-blue-400 shadow-md"
+                    : "bg-warm-white border border-warm-gray-light/15"
+                }`}
               >
                 <div className="flex items-center gap-3">
                   <span className="text-3xl">{station.emoji}</span>
                   <p className="text-[17px] font-bold text-warm-gray">{station.nameKo}</p>
                 </div>
-                <span className="text-2xl">▶️</span>
+                <span className="text-2xl">
+                  {nowPlayingLabel === station.nameKo ? "🔊" : "▶️"}
+                </span>
               </button>
             ))}
           </div>
