@@ -49,6 +49,10 @@ const RADIO_STATIONS: RadioStation[] = [
   { nameKo: "SBS 러브FM", emoji: "❤️", searchQuery: "SBS 러브FM 실시간 라이브" },
   { nameKo: "SBS 파워FM", emoji: "⚡", searchQuery: "SBS 파워FM 실시간 라이브 보이는 라디오" },
   { nameKo: "CBS 기독교방송", emoji: "✝️", searchQuery: "CBS 기독교방송 라디오 실시간 라이브" },
+  { nameKo: "CBS JOY4U (24시간 CCM)", emoji: "🎵", searchQuery: "CBS JOY4U 24시간 CCM 찬양 라이브" },
+  { nameKo: "FEBC 극동방송", emoji: "✝️", searchQuery: "FEBC 극동방송 라디오 실시간 라이브" },
+  { nameKo: "CTS 기독교TV", emoji: "📺", searchQuery: "CTS 기독교TV 실시간 라이브" },
+  { nameKo: "찬양 라이브 24시간", emoji: "🙏", searchQuery: "찬양 워십 라이브 24시간 스트리밍" },
   { nameKo: "트로트 라디오 24시간", emoji: "🎶", searchQuery: "트로트 라디오 24시간 실시간 라이브" },
   { nameKo: "7080 올드팝 라디오", emoji: "🎸", searchQuery: "7080 올드팝 24시간 라이브 스트리밍" },
 ];
