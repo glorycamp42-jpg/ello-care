@@ -1081,4 +1081,16 @@ function SettingsMenu({ onChangeCharacter }: { onChangeCharacter: () => void }) 
             <button
               onClick={() => { setOpen(false); handleLogout(); }}
               style={{
-                display: "block", width: "1
+                display: "block", width: "100%", padding: "12px 16px",
+                fontSize: 14, color: "#EF4444", background: "none", border: "none",
+                textAlign: "left", cursor: "pointer",
+              }}
+            >
+              로그아웃
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

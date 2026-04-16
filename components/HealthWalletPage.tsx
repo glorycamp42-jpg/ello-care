@@ -174,7 +174,7 @@ export default function HealthWalletPage({ onClose, userId, langCode = "ko" }: P
   }
 
   async function handleDelete(section: SectionKey, id: string) {
-    if (\!confirm(langCode === "ko" ? "삭제할까요?" : "Delete?")) return;
+    if (!confirm(langCode === "ko" ? "삭제할까요?" : "Delete?")) return;
     const table = TABLE_MAP[section];
     await fetch("/api/health-wallet", {
       method: "DELETE",
@@ -227,7 +227,7 @@ export default function HealthWalletPage({ onClose, userId, langCode = "ko" }: P
 
         {/* List */}
         <div className="flex-1 overflow-auto px-3 py-2">
-          {items.length === 0 && \!adding ? (
+          {items.length === 0 && !adding ? (
             <div className="text-center text-warm-gray-light py-12 text-lg">{t.noData}</div>
           ) : (
             items.map((item) => (

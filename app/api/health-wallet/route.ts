@@ -5,8 +5,8 @@ export const dynamic = "force-dynamic";
 
 function admin() {
   return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL\!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY\!,
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { persistSession: false } }
   );
 }
@@ -34,11 +34,11 @@ export async function GET(req: NextRequest) {
   const db = admin();
   const userId = req.nextUrl.searchParams.get("userId");
   const table = req.nextUrl.searchParams.get("table");
-  if (\!userId) return NextResponse.json({ error: "userId required" }, { status: 400 });
+  if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 });
 
   // Single table
   if (table) {
-    if (\!isValidTable(table)) return NextResponse.json({ error: "invalid table" }, { status: 400 });
+    if (!isValidTable(table)) return NextResponse.json({ error: "invalid table" }, { status: 400 });
     const { data, error } = await db.from(table).select("*").eq("user_id", userId).order("created_at", { ascending: false });
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ [table]: data || [] });
@@ -59,8 +59,8 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { table, ...fields } = body;
-    if (\!table || \!isValidTable(table)) return NextResponse.json({ error: "invalid table" }, { status: 400 });
-    if (\!fields.user_id) return NextResponse.json({ error: "user_id required" }, { status: 400 });
+    if (!table || !isValidTable(table)) return NextResponse.json({ error: "invalid table" }, { status: 400 });
+    if (!fields.user_id) return NextResponse.json({ error: "user_id required" }, { status: 400 });
     const { data, error } = await db.from(table).insert(fields).select().single();
     if (error) throw error;
     return NextResponse.json({ ok: true, data });
@@ -76,8 +76,8 @@ export async function PATCH(req: NextRequest) {
   try {
     const body = await req.json();
     const { table, id, ...fields } = body;
-    if (\!table || \!isValidTable(table)) return NextResponse.json({ error: "invalid table" }, { status: 400 });
-    if (\!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+    if (!table || !isValidTable(table)) return NextResponse.json({ error: "invalid table" }, { status: 400 });
+    if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
     const { error } = await db.from(table).update(fields).eq("id", id);
     if (error) throw error;
     return NextResponse.json({ ok: true });
@@ -93,8 +93,8 @@ export async function DELETE(req: NextRequest) {
   try {
     const body = await req.json();
     const { table, id } = body;
-    if (\!table || \!isValidTable(table)) return NextResponse.json({ error: "invalid table" }, { status: 400 });
-    if (\!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+    if (!table || !isValidTable(table)) return NextResponse.json({ error: "invalid table" }, { status: 400 });
+    if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
     const { error } = await db.from(table).delete().eq("id", id);
     if (error) throw error;
     return NextResponse.json({ ok: true });
