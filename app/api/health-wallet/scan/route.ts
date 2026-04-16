@@ -83,12 +83,23 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 800,
+        max_tokens: 1500,
         messages: [{
           role: "user",
           content: [
             { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
-            { type: "text", text: SECTION_PROMPTS[section] },
+            { type: "text", text: `STEP 1: First, transcribe EVERY piece of text and number visible on this image. List each one on a separate line with its approximate location (top-left, center, bottom-right, etc.). Include headers, labels, values, logos, small print - everything.
+
+STEP 2: After the transcription, extract the requested fields using the transcribed text.
+
+${SECTION_PROMPTS[section]}
+
+Format your response as:
+TRANSCRIPTION:
+<your full transcription here>
+
+JSON:
+<the JSON object only>` },
           ],
         }],
       }),
@@ -110,6 +121,7 @@ export async function POST(req: NextRequest) {
 
     const fields = JSON.parse(jsonMatch[0]);
     console.log(`[scan] ${section} extracted:`, JSON.stringify(fields));
+    console.log(`[scan] raw response:`, text);
 
     return NextResponse.json({ fields });
   } catch (e) {
