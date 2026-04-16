@@ -12,6 +12,7 @@ import TicketToast from "@/components/TicketToast";
 import HappinessGarden from "@/components/HappinessGarden";
 import RemindersPage from "@/components/RemindersPage";
 import BiblePage from "@/components/BiblePage";
+import HomelandPage from "@/components/HomelandPage";
 import SafetyPage from "@/components/SafetyPage";
 import HealthWalletPage from "@/components/HealthWalletPage";
 import { findContactByKeyword } from "@/components/SafetyPage";
@@ -63,6 +64,7 @@ export default function Home() {
   const [showTicketPage, setShowTicketPage] = useState(false);
   const [showReminders, setShowReminders] = useState(false);
   const [showBible, setShowBible] = useState(false);
+  const [showHomeland, setShowHomeland] = useState(false);
   const [showSafety, setShowSafety] = useState(false);
   const [showHealthWallet, setShowHealthWallet] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -371,6 +373,9 @@ export default function Home() {
       }}
     />;
   }
+  if (showHomeland) {
+    return <HomelandPage onClose={() => setShowHomeland(false)} langCode={lang?.code || getSavedLang().code} />;
+  }
   if (showSafety) {
     return <SafetyPage onClose={() => setShowSafety(false)} langCode={lang?.code || getSavedLang().code} />;
   }
@@ -473,6 +478,7 @@ export default function Home() {
     tickets={tickets} onShowTickets={() => setShowTicketPage(true)}
     onShowReminders={() => setShowReminders(true)}
     onShowBible={() => setShowBible(true)}
+    onShowHomeland={() => setShowHomeland(true)}
     onShowHealthWallet={() => setShowHealthWallet(true)}
     onChangeLang={handleChangeLanguage}
     userCity={userCity}
@@ -503,6 +509,7 @@ interface ChatUIProps {
   onShowTickets: () => void;
   onShowReminders: () => void;
   onShowBible: () => void;
+  onShowHomeland: () => void;
   onShowHealthWallet: () => void;
   onChangeLang: () => void;
   userCity: string;
@@ -538,7 +545,7 @@ function ChatUI({
   lastAssistantText, setLastAssistantText,
   chatEndRef, recognitionRef, fileInputRef, messagesRef,
   playTTS, stopOrReplayTTS, createRecognition, onChangeCharacter,
-  tickets, onShowTickets, onShowReminders, onShowBible, onShowHealthWallet, onChangeLang, userCity, lang, checkedIn, setCheckedIn, appointmentToast, setAppointmentToast, userId,
+  tickets, onShowTickets, onShowReminders, onShowBible, onShowHomeland, onShowHealthWallet, onChangeLang, userCity, lang, checkedIn, setCheckedIn, appointmentToast, setAppointmentToast, userId,
 }: ChatUIProps) {
 
   /* ── Interpreter mode state ── */
@@ -734,6 +741,19 @@ function ChatUI({
       }
       if (/노래|부르|singing/.test(text)) {
         tickets.earn("sing");
+      }
+
+      // Homeland (music/radio) detection
+      if (/트로트|옛날\s?노래|라디오\s?틀|가요\s?틀|노래\s?틀|음악\s?틀|고향|찬송가|play\s?(music|radio|trot)/i.test(text)) {
+        const confirmMsg = lang.code === "ko"
+          ? "고향 페이지를 열어드릴게요! 라디오도 듣고 옛날 노래도 들어보세요."
+          : "Opening the Homeland page for you! Enjoy radio and old songs.";
+        setMessages([...messagesRef.current, { role: "user", content: text }, { role: "assistant", content: confirmMsg }]);
+        setLastAssistantText(confirmMsg);
+        setInput("");
+        playTTS(confirmMsg);
+        setTimeout(() => onShowHomeland(), 1500);
+        return;
       }
 
       // Call detection: "딸한테 전화해줘", "아들에게 전화", etc.
@@ -1126,9 +1146,9 @@ function ChatUI({
           className="px-3.5 py-2 bg-coral/10 text-coral rounded-full text-[13px] font-bold hover:bg-coral/20 active:bg-coral/25 transition-colors whitespace-nowrap shrink-0 border border-coral/20">
           {lang.ui.wordGame}
         </button>
-        <button onClick={onShowBible}
+        <button onClick={onShowHomeland}
           className="px-3.5 py-2 bg-coral/10 text-coral rounded-full text-[13px] font-bold hover:bg-coral/20 active:bg-coral/25 transition-colors whitespace-nowrap shrink-0 border border-coral/20">
-          {lang.ui.bible}
+          {lang.code === "ko" ? "고향" : "Homeland"}
         </button>
         <button onClick={onShowReminders}
           className="px-3.5 py-2 bg-coral/10 text-coral rounded-full text-[13px] font-bold hover:bg-coral/20 active:bg-coral/25 transition-colors whitespace-nowrap shrink-0 border border-coral/20">
@@ -1186,15 +1206,14 @@ function ChatUI({
             <span className="text-[12px] font-semibold">{lang.ui.schedule}</span>
           </button>
 
-          {/* 성경 */}
-          <button onClick={onShowBible} className="flex flex-col items-center gap-1 min-w-0 flex-1 py-2 text-warm-gray-light active:scale-95 transition-transform">
+          {/* 고향 */}
+          <button onClick={onShowHomeland} className="flex flex-col items-center gap-1 min-w-0 flex-1 py-2 text-warm-gray-light active:scale-95 transition-transform">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-              <line x1="12" y1="6" x2="12" y2="13" />
-              <line x1="9" y1="9" x2="15" y2="9" />
+              <circle cx="12" cy="12" r="10" />
+              <path d="M9 12a9 9 0 0 0 6 0" />
+              <path d="M12 2a15 15 0 0 1 4 10 15 15 0 0 1-4 10 15 15 0 0 1-4-10A15 15 0 0 1 12 2z" />
             </svg>
-            <span className="text-[12px] font-semibold">{lang.ui.bible}</span>
+            <span className="text-[12px] font-semibold">{lang.code === "ko" ? "고향" : "Homeland"}</span>
           </button>
 
           {/* 건강수첩 */}
