@@ -213,16 +213,16 @@ export default function Home() {
       if (greetData.text && !greetData.error) {
         // Filter out any raw system prompt text that might leak through
         const filtered = greetData.text
-          .replace(/\[SYSTEM\].*$/s, "")
-          .replace(/Memories:.*$/s, "")
-          .replace(/Keep it to \d+-\d+ sentences.*$/s, "")
+          .replace(/\[SYSTEM\][\s\S]*$/, "")
+          .replace(/Memories:[\s\S]*$/, "")
+          .replace(/Keep it to \d+-\d+ sentences[\s\S]*$/, "")
           .replace(/Be warm and caring\.?/gi, "")
           .replace(/\bcaring\.?\s*/gi, "")
           .replace(/\bwarm\.?\s*/gi, "")
-          .replace(/ABSOLUTE RULE.*$/s, "")
-          .replace(/CRITICAL.*$/s, "")
-          .replace(/You are a.*companion.*$/s, "")
-          .replace(/Conversation style:.*$/s, "")
+          .replace(/ABSOLUTE RULE[\s\S]*$/, "")
+          .replace(/CRITICAL[\s\S]*$/, "")
+          .replace(/You are a[\s\S]*companion[\s\S]*$/, "")
+          .replace(/Conversation style:[\s\S]*$/, "")
           .trim();
         if (filtered.length > 5 && !/^[a-zA-Z.\s]{1,20}$/.test(filtered)) {
           console.log("[greeting] Smart greeting generated:", filtered.slice(0, 50));
@@ -1086,8 +1086,4 @@ function SettingsMenu({ onChangeCharacter }: { onChangeCharacter: () => void }) 
               로그아웃
             </button>
           </div>
-        </>
-      )}
-    </div>
-  );
-}
+      
