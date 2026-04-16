@@ -462,13 +462,7 @@ export default function Home() {
 
   /* ── Chat JSX (inline to keep state access simple) ── */
   return <ChatUI
-    persona={persona!} messages={messages} setMessages={(m: Message[] | ((prev: Message[]) => Message[])) => {
-      if (typeof m === "function") {
-        setMessages(prev => { const next = m(prev); messagesRef.current = next; return next; });
-      } else {
-        setMessages(m); messagesRef.current = m;
-      }
-    }}
+    persona={persona!} messages={messages} setMessages={(m) => { setMessages(m); messagesRef.current = m; }}
     input={input} setInput={setInput}
     isLoading={isLoading} setIsLoading={setIsLoading}
     isListening={isListening} setIsListening={setIsListening}
@@ -493,7 +487,7 @@ export default function Home() {
 /* ── ChatUI Component ── */
 interface ChatUIProps {
   persona: Persona;
-  messages: Message[]; setMessages: (m: Message[] | ((prev: Message[]) => Message[])) => void;
+  messages: Message[]; setMessages: (m: Message[]) => void;
   input: string; setInput: (s: string) => void;
   isLoading: boolean; setIsLoading: (b: boolean) => void;
   isListening: boolean; setIsListening: (b: boolean) => void;
@@ -521,7 +515,7 @@ interface ChatUIProps {
 }
 
 /* ── Interpreter keyword detection ── */
-const INTERPRET_TRIGGERS = /통역|interpret|영어로 (해줘|말해|얘기해|대화해|통역해)|스페니시|스페인어로|중국어로|일본어로|베트남어로|병원이야.*(영어|통역)|식당이야.*(영어|통역)|마켓이야.*(영어|통역)/i;
+const INTERPRET_TRIGGERS = /통역|interpret|영어로 (해줘|말해|얘기해|대화해|통역해)|스페니시|스페인어로|중국어로|일본어로|베트남어로/i;
 const INTERPRET_EXIT = /^(끝|그만|종료|done|stop|통역 끝|대화 끝)$/i;
 
 function detectTargetLang(text: string): string {
@@ -529,7 +523,7 @@ function detectTargetLang(text: string): string {
   if (/중국어|chinese|중국말/i.test(text)) return "zh";
   if (/일본어|japanese|일본말/i.test(text)) return "ja";
   if (/베트남어|vietnamese|베트남말/i.test(text)) return "vi";
-  return "en"; // default English
+  return "en";
 }
 
 const LANG_SPEECH_CODES: Record<string, string> = {
@@ -554,9 +548,7 @@ function ChatUI({
   const [interpreterLang, setInterpreterLang] = useState("en");
   const [interpreterTurn, setInterpreterTurn] = useState<"user" | "other">("user");
   const interpreterHistoryRef = useRef<{ speaker: string; original: string; translated: string }[]>([]);
-  const interpreterAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Play TTS with a specific language override (for interpreter mode)
   async function playInterpreterTTS(text: string, targetLangCode: string) {
     try {
       const res = await fetch("/api/tts", {
@@ -568,7 +560,6 @@ function ChatUI({
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
-      interpreterAudioRef.current = audio;
       await audio.play();
       await new Promise<void>((resolve) => {
         audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
@@ -577,7 +568,6 @@ function ChatUI({
     } catch { /* ignore */ }
   }
 
-  // Start listening in a specific language, return the recognized text
   function listenInLanguage(langCode: string): Promise<string> {
     return new Promise((resolve) => {
       if (typeof window === "undefined") { resolve(""); return; }
@@ -587,21 +577,17 @@ function ChatUI({
       r.lang = LANG_SPEECH_CODES[langCode] || "en-US";
       r.continuous = true;
       r.interimResults = true;
-
       let accumulated = "";
       let silenceTimer: ReturnType<typeof setTimeout> | null = null;
-
       const finish = () => {
         if (silenceTimer) clearTimeout(silenceTimer);
         try { r.stop(); } catch {}
         resolve(accumulated.trim());
       };
-
       const resetSilence = () => {
         if (silenceTimer) clearTimeout(silenceTimer);
         silenceTimer = setTimeout(finish, 3000);
       };
-
       r.onresult = (ev: SpeechRecognitionResultEvent) => {
         const allFinals: string[] = [];
         for (let i = 0; i < ev.results.length; i++) {
@@ -618,39 +604,32 @@ function ChatUI({
         setInput(accumulated);
         resetSilence();
       };
-
       r.onerror = () => finish();
       r.onend = () => finish();
-
       r.start();
       setIsListening(true);
       resetSilence();
     });
   }
 
-  // Main interpreter conversation loop
   async function interpreterSend(text: string, speaker: "user" | "other") {
     if (!text.trim()) return;
-
-    // Check for exit
     if (INTERPRET_EXIT.test(text.trim())) {
       setInterpreterMode(false);
       setInterpreterTurn("user");
       const summary = interpreterHistoryRef.current.length > 0
         ? "통역이 끝났어요. 대화 잘 하셨어요!"
         : "통역 모드를 종료했어요.";
-      setMessages(prev => [...prev, { role: "assistant", content: summary }]);
+      setMessages([...messagesRef.current, { role: "assistant", content: summary }]);
       setLastAssistantText(summary);
       playTTS(summary);
       interpreterHistoryRef.current = [];
       return;
     }
-
     const userMsg: Message = { role: "user", content: text };
-    setMessages(prev => [...prev, userMsg]);
+    setMessages([...messagesRef.current, userMsg]);
     setInput("");
     setIsLoading(true);
-
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -664,61 +643,46 @@ function ChatUI({
         }),
       });
       const data = await res.json();
-
       if (data.exit) {
         setInterpreterMode(false);
         setInterpreterTurn("user");
         const exitMsg = data.forUser || "통역이 끝났어요.";
-        setMessages(prev => [...prev, { role: "assistant", content: exitMsg }]);
+        setMessages([...messagesRef.current, { role: "assistant", content: exitMsg }]);
         setLastAssistantText(exitMsg);
         playTTS(exitMsg);
         interpreterHistoryRef.current = [];
+        setIsLoading(false);
         return;
       }
-
       if (speaker === "user" && data.forOther) {
-        // User spoke Korean → play English (or target lang) to other person
         interpreterHistoryRef.current.push({ speaker: "user", original: text, translated: data.forOther });
-        const displayMsg = `[${LANG_LABELS[interpreterLang]}] ${data.forOther}${data.forUser ? "\n(" + data.forUser + ")" : ""}`;
-        setMessages(prev => [...prev, { role: "assistant", content: displayMsg }]);
+        const displayMsg = "[" + (LANG_LABELS[interpreterLang] || "English") + "] " + data.forOther + (data.forUser ? "\n(" + data.forUser + ")" : "");
+        setMessages([...messagesRef.current, userMsg, { role: "assistant", content: displayMsg }]);
         setLastAssistantText(displayMsg);
         setIsLoading(false);
-
-        // Play target language TTS
         await playInterpreterTTS(data.forOther, interpreterLang);
-
-        // Now auto-listen for other person's response in target language
         setInterpreterTurn("other");
         setInput("");
         const otherResponse = await listenInLanguage(interpreterLang);
         setIsListening(false);
-        if (otherResponse) {
-          await interpreterSend(otherResponse, "other");
-        }
+        if (otherResponse) await interpreterSend(otherResponse, "other");
       } else if (speaker === "other" && data.forUser) {
-        // Other person spoke → translate to Korean for user
         interpreterHistoryRef.current.push({ speaker: "other", original: text, translated: data.forUser });
         const displayMsg = data.forUser;
-        setMessages(prev => [...prev, { role: "assistant", content: displayMsg }]);
+        setMessages([...messagesRef.current, userMsg, { role: "assistant", content: displayMsg }]);
         setLastAssistantText(displayMsg);
         setIsLoading(false);
-
-        // Play Korean TTS for the user
         await playInterpreterTTS(data.forUser, "ko");
-
-        // Now auto-listen for user's Korean response
         setInterpreterTurn("user");
         setInput("");
         const userResponse = await listenInLanguage("ko");
         setIsListening(false);
-        if (userResponse) {
-          await interpreterSend(userResponse, "user");
-        }
+        if (userResponse) await interpreterSend(userResponse, "user");
       } else {
         setIsLoading(false);
       }
     } catch {
-      setMessages(prev => [...prev, { role: "assistant", content: "통역 중 오류가 발생했어요." }]);
+      setMessages([...messagesRef.current, { role: "assistant", content: "통역 중 오류가 발생했어요." }]);
       setIsLoading(false);
     }
   }
@@ -746,25 +710,18 @@ function ChatUI({
 
       // ── Interpreter mode handling ──
       if (interpreterMode) {
-        // Already in interpreter mode → send as current turn's speaker
         interpreterSend(text, interpreterTurn);
         return;
       }
-
-      // Check if user wants to enter interpreter mode
       if (INTERPRET_TRIGGERS.test(text)) {
-        const targetLang = detectTargetLang(text);
+        const tLang = detectTargetLang(text);
         setInterpreterMode(true);
-        setInterpreterLang(targetLang);
+        setInterpreterLang(tLang);
         setInterpreterTurn("user");
         interpreterHistoryRef.current = [];
-
-        const langLabel = LANG_LABELS[targetLang] || "English";
-        const confirmMsg = `통역 모드를 시작할게요 (${langLabel}). 말씀하시면 제가 ${langLabel}로 바꿔서 말할게요. 상대방이 말하면 한국어로 바꿔드릴게요. 끝나면 "끝"이라고 하세요.`;
-        setMessages(prev => [...prev,
-          { role: "user", content: text },
-          { role: "assistant", content: confirmMsg },
-        ]);
+        const langLabel = LANG_LABELS[tLang] || "English";
+        const confirmMsg = "통역 모드를 시작할게요 (" + langLabel + "). 말씀하시면 제가 " + langLabel + "로 바꿔서 말할게요. 상대방이 말하면 한국어로 바꿔드릴게요. 끝나면 끝이라고 하세요.";
+        setMessages([...messagesRef.current, { role: "user", content: text }, { role: "assistant", content: confirmMsg }]);
         setLastAssistantText(confirmMsg);
         setInput("");
         playTTS(confirmMsg);
@@ -1064,13 +1021,13 @@ function ChatUI({
           fontSize: 14, fontWeight: 600,
         }}>
           <span>
-            {interpreterTurn === "user" ? "🎤 " : "🗣 "}
+            {interpreterTurn === "user" ? "\uD83C\uDFA4 " : "\uD83D\uDDE3 "}
             통역 중 ({LANG_LABELS[interpreterLang]})
             {interpreterTurn === "user" ? " — 말씀하세요" : " — 상대방 차례"}
           </span>
           <button onClick={() => { setInterpreterMode(false); setInterpreterTurn("user"); interpreterHistoryRef.current = [];
             const exitMsg = "통역 모드를 종료했어요.";
-            setMessages(prev => [...prev, { role: "assistant", content: exitMsg }]);
+            setMessages([...messagesRef.current, { role: "assistant", content: exitMsg }]);
             playTTS(exitMsg);
           }} style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "white", borderRadius: 8, padding: "4px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
             끝
@@ -1146,4 +1103,196 @@ function ChatUI({
         ))}
 
         {isLoading && (
-          <div className="flex items-end gap-1.5 jus
+          <div className="flex items-end gap-1.5 justify-start">
+            <div className="bg-warm-white px-4 py-3 rounded-[18px] rounded-bl-[5px] shadow-sm shadow-warm-gray/8">
+              <span className="inline-flex gap-1.5">
+                <span className="w-1.5 h-1.5 bg-coral/40 rounded-full animate-bounce" />
+                <span className="w-1.5 h-1.5 bg-coral/40 rounded-full animate-bounce" style={{ animationDelay: "0.15s" }} />
+                <span className="w-1.5 h-1.5 bg-coral/40 rounded-full animate-bounce" style={{ animationDelay: "0.3s" }} />
+              </span>
+            </div>
+          </div>
+        )}
+        <div ref={chatEndRef} />
+      </div>
+
+      {/* ── Quick suggestions + 끝말잇기 ── */}
+      <div className="px-4 pb-2 flex gap-2 overflow-x-auto no-scrollbar">
+        {lang.ui.quickButtons.map((t) => (
+          <button key={t} onClick={() => sendMessage(t)}
+            className="px-3.5 py-2 bg-coral-pastel text-coral-dark rounded-full text-[13px] font-medium hover:bg-coral/15 active:bg-coral/20 transition-colors whitespace-nowrap shrink-0">
+            {t}
+          </button>
+        ))}
+        <button onClick={startWordGame}
+          className="px-3.5 py-2 bg-coral/10 text-coral rounded-full text-[13px] font-bold hover:bg-coral/20 active:bg-coral/25 transition-colors whitespace-nowrap shrink-0 border border-coral/20">
+          {lang.ui.wordGame}
+        </button>
+        <button onClick={onShowBible}
+          className="px-3.5 py-2 bg-coral/10 text-coral rounded-full text-[13px] font-bold hover:bg-coral/20 active:bg-coral/25 transition-colors whitespace-nowrap shrink-0 border border-coral/20">
+          {lang.ui.bible}
+        </button>
+        <button onClick={onShowReminders}
+          className="px-3.5 py-2 bg-coral/10 text-coral rounded-full text-[13px] font-bold hover:bg-coral/20 active:bg-coral/25 transition-colors whitespace-nowrap shrink-0 border border-coral/20">
+          {lang.ui.schedule}
+        </button>
+      </div>
+
+      {/* ── Bottom bar ── */}
+      <div className="bg-cream border-t border-warm-gray-light/15 px-4 pt-3 pb-5">
+        <div className="mb-3">
+          <div className="flex items-end gap-2">
+            <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
+              placeholder={lang.ui.placeholder} rows={1}
+              className="flex-1 px-4 py-3 bg-warm-white rounded-2xl border border-warm-gray-light/15 text-[15px] text-warm-gray placeholder:text-warm-gray-light/50 focus:outline-none focus:border-coral/30 focus:ring-2 focus:ring-coral/10 resize-none min-h-[46px]" />
+            {input.trim() && (
+              <button onClick={() => sendMessage()} disabled={isLoading}
+                className="w-[46px] h-[46px] bg-coral text-white rounded-full flex items-center justify-center shrink-0 shadow-sm shadow-coral/20 active:scale-95 transition-all disabled:opacity-50"
+                aria-label="보내기">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center justify-center gap-6">
+          <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleImageUpload} className="hidden" />
+          <ImageButton onClick={() => fileInputRef.current?.click()} disabled={isLoading} label={lang.ui.camera} />
+          <VoiceButton isListening={isListening} onClick={toggleListening} disabled={isLoading} label={lang.ui.mic} />
+          <SpeakerButton isSpeaking={isSpeaking} onClick={stopOrReplayTTS} label={lang.ui.speaker} labelActive={lang.ui.speaking} />
+        </div>
+        {isListening && <p className="text-center text-sm text-coral mt-2 animate-pulse font-medium">{lang.ui.listening}</p>}
+      </div>
+
+      {/* ── Bottom Tab Navigation ── */}
+      <nav className="bg-cream border-t border-warm-gray-light/15 px-1 pt-1.5 pb-4">
+        <div className="flex items-center justify-around">
+          {/* 홈 */}
+          <button onClick={onChangeCharacter} className="flex flex-col items-center gap-0.5 min-w-0 flex-1 py-1 text-warm-gray-light">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+            <span className="text-[9px] font-medium">{lang.ui.home}</span>
+          </button>
+
+          {/* 대화 */}
+          <button className="flex flex-col items-center gap-0.5 min-w-0 flex-1 py-1 text-coral">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            <span className="text-[9px] font-bold">{lang.ui.chat}</span>
+          </button>
+
+          {/* 일정 */}
+          <button onClick={onShowReminders} className="flex flex-col items-center gap-0.5 min-w-0 flex-1 py-1 text-warm-gray-light">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+            <span className="text-[9px] font-medium">{lang.ui.schedule}</span>
+          </button>
+
+          {/* 성경 */}
+          <button onClick={onShowBible} className="flex flex-col items-center gap-0.5 min-w-0 flex-1 py-1 text-warm-gray-light">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+              <line x1="12" y1="6" x2="12" y2="13" />
+              <line x1="9" y1="9" x2="15" y2="9" />
+            </svg>
+            <span className="text-[9px] font-medium">{lang.ui.bible}</span>
+          </button>
+
+          {/* 안전 */}
+          <button onClick={onShowSafety} className="flex flex-col items-center gap-0.5 min-w-0 flex-1 py-1 text-warm-gray-light">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+            <span className="text-[9px] font-medium">{lang.ui.safety}</span>
+          </button>
+
+          {/* 건강수첩 */}
+          <button onClick={onShowHealthWallet} className="flex flex-col items-center gap-0.5 min-w-0 flex-1 py-1 text-warm-gray-light">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+            </svg>
+            <span className="text-[9px] font-medium">{lang.code === "ko" ? "건강수첩" : "Health"}</span>
+          </button>
+        </div>
+      </nav>
+    </div>
+  );
+}
+
+/* ── Settings Dropdown Menu ── */
+function SettingsMenu({ onChangeCharacter }: { onChangeCharacter: () => void }) {
+  const [open, setOpen] = useState(false);
+
+  async function handleLogout() {
+    const sb = createClient();
+    await sb.auth.signOut();
+    window.location.href = "/login";
+  }
+
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          width: 32, height: 32, borderRadius: 16,
+          background: "#FFE6D9", border: "none", cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}
+        aria-label="설정"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FF6B35" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" />
+        </svg>
+      </button>
+
+      {open && (
+        <>
+          {/* Backdrop */}
+          <div
+            onClick={() => setOpen(false)}
+            style={{ position: "fixed", inset: 0, zIndex: 40 }}
+          />
+          {/* Menu */}
+          <div style={{
+            position: "absolute", top: 36, right: 0, zIndex: 50,
+            background: "#fff", borderRadius: 12, boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
+            minWidth: 160, overflow: "hidden",
+          }}>
+            <button
+              onClick={() => { setOpen(false); onChangeCharacter(); }}
+              style={{
+                display: "block", width: "100%", padding: "12px 16px",
+                fontSize: 14, color: "#3D3530", background: "none", border: "none",
+                textAlign: "left", cursor: "pointer",
+              }}
+            >
+              캐릭터 변경
+            </button>
+            <div style={{ height: 1, background: "#f0f0f0" }} />
+            <button
+              onClick={() => { setOpen(false); handleLogout(); }}
+              style={{
+                display: "block", width: "100%", padding: "12px 16px",
+                fontSize: 14, color: "#EF4444", background: "none", border: "none",
+                textAlign: "left", cursor: "pointer",
+              }}
+            >
+              로그아웃
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
