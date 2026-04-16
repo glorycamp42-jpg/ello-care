@@ -305,9 +305,25 @@ export default function HealthWalletPage({ onClose, userId, langCode = "ko" }: P
             <div className="text-center text-warm-gray-light py-12 text-lg">{t.noData}</div>
           ) : (
             items.map((item) => (
-              <div key={item.id as string} className="bg-white rounded-2xl p-4 mb-2 shadow-sm border border-warm-gray-light/10 flex items-center">
-                <div className="flex-1 text-warm-brown text-base font-medium">{displayValue(item, activeSection)}</div>
-                <button onClick={() => handleDelete(activeSection, item.id as string)} className="text-red-400 text-sm font-bold ml-2 px-2 py-1">{"\u2715"}</button>
+              <div key={item.id as string} className="bg-white rounded-2xl p-4 mb-2 shadow-sm border border-warm-gray-light/10">
+                <div className="flex items-start">
+                  <div className="flex-1">
+                    <div className="text-warm-brown text-lg font-bold mb-2">{displayValue(item, activeSection)}</div>
+                    <div className="space-y-1">
+                      {fields.map((f) => {
+                        const v = item[f.key];
+                        if (!v || String(v).trim() === "") return null;
+                        return (
+                          <div key={f.key} className="text-sm text-warm-gray flex">
+                            <span className="font-semibold text-warm-brown/70 w-24 flex-shrink-0">{f.label}:</span>
+                            <span className="text-warm-brown flex-1">{String(v)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <button onClick={() => handleDelete(activeSection, item.id as string)} className="text-red-400 text-lg font-bold ml-2 px-2 py-1">{"\u2715"}</button>
+                </div>
               </div>
             ))
           )}
