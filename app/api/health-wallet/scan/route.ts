@@ -7,19 +7,22 @@ type SectionKey = "medications" | "insurance" | "allergies" | "diagnoses" | "doc
 const SECTION_PROMPTS: Record<SectionKey, string> = {
   insurance: `You are looking at a photo of a health insurance card (US). Your job: read EVERY piece of text and number on the card - this is critical.
 
-Step 1: First, mentally scan the ENTIRE card - top to bottom, left to right. Look at logos, headers, labels, and ALL numbers (big or small).
-
-Step 2: Extract these fields. Be aggressive - if you see a number or name that could reasonably be the field, use it. Don't leave fields empty unless truly nothing is there.
+CRITICAL FIELDS TO FIND (do not skip any):
+1. Name / Member Name / Subscriber → policy_holder (e.g. "JIN YU", "JOHN DOE")
+2. Member ID / Subscriber ID / CIN / ID # → member_id (e.g. "96493787C")
+3. Effective Date / Eff Date → effective_date as YYYY-MM-DD ("12/1/2025" → "2025-12-01", "3/15/24" → "2024-03-15")
+4. Expiration Date / Exp Date → expiry_date as YYYY-MM-DD
+5. Group # / Group Number / Grp → group_number
 
 Common card examples:
-- LA Care Medi-Cal: has a CIN (9-digit Client Index Number), Member name, Date of Birth
-- Medicare: has Medicare Number (11-char alphanumeric like 1AB2-C34-DE56), Part A/B info
-- Private insurance (Blue Shield, Anthem, Kaiser, Aetna, Humana, UnitedHealthcare): has Member ID (often 9-12 digits/chars), Group # (4-8 digits), Rx BIN/PCN
+- LA Care Medi-Cal: carrier="L.A. Care", plan_name="Medi-Cal". Has "Name: [FULL NAME]", "Member ID: [9-char like 96493787C]", "Effective Date: MM/DD/YYYY"
+- Medicare: Medicare Number (11-char alphanumeric like 1AB2-C34-DE56)
+- Private (Blue Shield, Anthem, Kaiser, Aetna, Humana, UnitedHealthcare): Member ID + Group # + Rx BIN/PCN
 
 Return ONLY this JSON (no other text, no markdown):
-{"carrier": "insurance company/plan name exactly as printed", "plan_name": "specific plan name/type (HMO, PPO, EPO, Medi-Cal, etc.) if listed separately", "member_id": "the member/subscriber/CIN/ID number - ANY prominent ID number on the card", "group_number": "group number if any", "policy_holder": "patient/member full name printed on card"}
+{"carrier": "insurance company name (e.g. 'L.A. Care', 'Blue Shield', 'Kaiser Permanente')", "plan_name": "plan type/name (e.g. 'Medi-Cal', 'HMO', 'PPO')", "member_id": "Member/Subscriber/CIN ID number", "group_number": "Group # if present", "policy_holder": "full name from 'Name:' field (e.g. 'JIN YU')", "effective_date": "YYYY-MM-DD from 'Effective Date' field or empty string", "expiry_date": "YYYY-MM-DD from 'Expiration Date' or empty string"}
 
-If a field truly is not visible after careful reading, use empty string "".`,
+If a field is not visible, use empty string "". For dates, ONLY fill if clearly present - do not guess.`,
 
   medications: `Look very carefully at this photo of a medication bottle, pill box, or prescription label. Read ALL visible text including small print on labels. Extract these fields as JSON:
 {"name": "medication/drug name (brand or generic)", "dosage": "strength with units (e.g. '10mg', '500mg', '25 mcg')", "frequency": "how often to take (e.g. 'once daily', 'twice daily', 'every 8 hours')", "purpose": "what it treats if visible (e.g. 'blood pressure', 'diabetes')", "prescriber": "doctor/prescriber name", "pharmacy": "pharmacy name if visible"}

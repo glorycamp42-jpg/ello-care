@@ -1091,4 +1091,8 @@ function SettingsMenu({ onChangeCharacter }: { onChangeCharacter: () => void }) 
     </div>
   );
 }
-      
+        </>
+      )}
+    </div>
+  );
+}

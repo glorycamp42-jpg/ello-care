@@ -14,6 +14,7 @@ const I18N: Record<string, Record<string, string>> = {
     medName: "약 이름", dosage: "용량", frequency: "복용 빈도", purpose: "복용 이유",
     prescriber: "처방 의사", pharmacy: "약국", active: "복용 중",
     carrier: "보험사", planName: "플랜명", memberId: "Member ID", groupNum: "Group #",
+    policyHolder: "가입자명", effectiveDate: "유효 시작일", expiryDate: "만료일",
     allergen: "원인 물질", type: "종류", reaction: "반응", severity: "심각도",
     diagnosis: "진단명", icdCode: "ICD 코드", specialty: "전문분야", clinic: "병원/클리닉",
     isPcp: "주치의", relationship: "관계", vaccineName: "백신명", dateGiven: "접종일",
@@ -29,6 +30,7 @@ const I18N: Record<string, Record<string, string>> = {
     medName: "Medication", dosage: "Dosage", frequency: "Frequency", purpose: "Purpose",
     prescriber: "Prescriber", pharmacy: "Pharmacy", active: "Active",
     carrier: "Carrier", planName: "Plan", memberId: "Member ID", groupNum: "Group #",
+    policyHolder: "Policy Holder", effectiveDate: "Effective Date", expiryDate: "Expiry Date",
     allergen: "Allergen", type: "Type", reaction: "Reaction", severity: "Severity",
     diagnosis: "Diagnosis", icdCode: "ICD Code", specialty: "Specialty", clinic: "Clinic",
     isPcp: "PCP", relationship: "Relationship", vaccineName: "Vaccine", dateGiven: "Date",
@@ -72,6 +74,9 @@ function getFields(section: SectionKey, t: Record<string, string>): FieldDef[] {
       { key: "plan_name", label: t.planName },
       { key: "member_id", label: t.memberId },
       { key: "group_number", label: t.groupNum },
+      { key: "policy_holder", label: t.policyHolder },
+      { key: "effective_date", label: t.effectiveDate, type: "date" },
+      { key: "expiry_date", label: t.expiryDate, type: "date" },
     ];
     case "allergies": return [
       { key: "allergen", label: t.allergen },
