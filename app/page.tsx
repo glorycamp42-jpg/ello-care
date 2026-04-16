@@ -1086,4 +1086,9 @@ function SettingsMenu({ onChangeCharacter }: { onChangeCharacter: () => void }) 
               로그아웃
             </button>
           </div>
+        </>
+      )}
+    </div>
+  );
+}
       
