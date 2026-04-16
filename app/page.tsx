@@ -1262,4 +1262,33 @@ function SettingsMenu({ onChangeCharacter }: { onChangeCharacter: () => void }) 
           {/* Menu */}
           <div style={{
             position: "absolute", top: 36, right: 0, zIndex: 50,
-            background: "#fff", borderRadi
+            background: "#fff", borderRadius: 12, boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
+            minWidth: 160, overflow: "hidden",
+          }}>
+            <button
+              onClick={() => { setOpen(false); onChangeCharacter(); }}
+              style={{
+                display: "block", width: "100%", padding: "12px 16px",
+                fontSize: 14, color: "#3D3530", background: "none", border: "none",
+                textAlign: "left", cursor: "pointer",
+              }}
+            >
+              캐릭터 변경
+            </button>
+            <div style={{ height: 1, background: "#f0f0f0" }} />
+            <button
+              onClick={() => { setOpen(false); handleLogout(); }}
+              style={{
+                display: "block", width: "100%", padding: "12px 16px",
+                fontSize: 14, color: "#EF4444", background: "none", border: "none",
+                textAlign: "left", cursor: "pointer",
+              }}
+            >
+              로그아웃
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
