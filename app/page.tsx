@@ -545,6 +545,7 @@ function ChatUI({
   lastAssistantText, setLastAssistantText,
   chatEndRef, recognitionRef, fileInputRef, messagesRef,
   playTTS, stopOrReplayTTS, createRecognition, onChangeCharacter,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   tickets, onShowTickets, onShowReminders, onShowBible, onShowHomeland, onShowHealthWallet, onChangeLang, userCity, lang, checkedIn, setCheckedIn, appointmentToast, setAppointmentToast, userId,
 }: ChatUIProps) {
 
