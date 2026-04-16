@@ -194,10 +194,7 @@ export default function Home() {
 
       if (memories.length === 0 && appointments.length === 0) return defaultGreeting;
 
-      // Build context for a personalized greeting
-      const memContext = memories.slice(0, 5).map((m: { content: string }) => m.content).join(", ");
-      const apptContext = appointments.slice(0, 2).map((a: { title: string; scheduled_at: string }) => `${a.title} (${a.scheduled_at})`).join(", ");
-
+      // Claude will use memories/appointments from DB via system prompt
       // Ask Claude for a warm personalized greeting
       const greetRes = await fetch("/api/chat", {
         method: "POST",
@@ -1094,3 +1091,10 @@ function SettingsMenu({ onChangeCharacter }: { onChangeCharacter: () => void }) 
     </div>
   );
 }
+00%", padding: "12px 16px",
+                fontSize: 14, color: "#EF4444", background: "none", border: "none",
+                textAlign: "left", cursor: "pointer",
+              }}
+            >
+              로그아웃
+     
