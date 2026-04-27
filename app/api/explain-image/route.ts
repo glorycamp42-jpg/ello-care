@@ -1,17 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const maxDuration = 60; // Vercel: 광고 카피 생성에 시간 여유
+
 export async function POST(request: NextRequest) {
   try {
-    const { imageBase64 } = await request.json();
+    const { imageBase64, mediaType } = await request.json();
     if (!imageBase64) {
       return NextResponse.json({ error: 'imageBase64 누락' }, { status: 400 });
     }
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return NextResponse.json(
+        { error: 'ANTHROPIC_API_KEY가 서버에 설정되지 않았습니다' },
+        { status: 500 }
+      );
+    }
+
+    // 허용된 MIME 타입만 통과 (Anthropic Vision은 png/jpeg/gif/webp만 지원)
+    const allowed = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+    const mt = allowed.includes(mediaType) ? mediaType : 'image/jpeg';
 
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY || '',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
@@ -25,7 +37,7 @@ export async function POST(request: NextRequest) {
                 type: 'image',
                 source: {
                   type: 'base64',
-                  media_type: 'image/png',
+                  media_type: mt,
                   data: imageBase64,
                 },
               },
@@ -44,23 +56,4 @@ export async function POST(request: NextRequest) {
               },
             ],
           },
-        ],
-      }),
-    });
-
-    if (!r.ok) {
-      const errText = await r.text();
-      console.error('Anthropic error:', errText);
-      return NextResponse.json({ error: 'Vision API 오류' }, { status: 500 });
-    }
-
-    const data = await r.json();
-    const script =
-      data.content?.[0]?.type === 'text' ? data.content[0].text.trim() : '';
-
-    return NextResponse.json({ script });
-  } catch (e) {
-    console.error(e);
-    return NextResponse.json({ error: '서버 오류' }, { status: 500 });
-  }
-}
+     

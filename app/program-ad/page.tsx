@@ -17,19 +17,56 @@ export default function ProgramAd() {
     ? script.split(/(?<=[.!?。!?])\s+|\n+/).filter((l) => l.trim().length > 0)
     : [];
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setImage(file);
     setScript('');
     setAudioUrl('');
     setPlaying(false);
     setCurrentLine(0);
     setError('');
+
+    // 5MB 초과 시 자동 리사이즈 (Anthropic Vision 한도 우회)
+    const processed = file.size > 4 * 1024 * 1024 ? await resizeImage(file) : file;
+    setImage(processed);
     const reader = new FileReader();
     reader.onload = (evt) => setPreview(evt.target?.result as string);
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(processed);
   };
+
+  const resizeImage = (file: File): Promise<File> =>
+    new Promise((resolve) => {
+      const img = new window.Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const maxDim = 1600;
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          const ratio = Math.min(maxDim / width, maxDim / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(
+          (blob) => {
+            URL.revokeObjectURL(url);
+            if (!blob) return resolve(file);
+            resolve(
+              new File([blob], file.name.replace(/\.\w+$/, '.jpg'), {
+                type: 'image/jpeg',
+              })
+            );
+          },
+          'image/jpeg',
+          0.85
+        );
+      };
+      img.src = url;
+    });
 
   const handleGenerate = async () => {
     if (!image) {
@@ -50,9 +87,15 @@ export default function ProgramAd() {
       const r1 = await fetch('/api/explain-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: base64 }),
+        body: JSON.stringify({
+          imageBase64: base64,
+          mediaType: image.type || 'image/jpeg',
+        }),
       });
-      if (!r1.ok) throw new Error('이미지 분석 실패');
+      if (!r1.ok) {
+        const e = await r1.json().catch(() => ({ error: '이미지 분석 실패' }));
+        throw new Error(e.error || '이미지 분석 실패');
+      }
       const { script: text } = await r1.json();
       setScript(text);
 
@@ -229,51 +272,4 @@ export default function ProgramAd() {
                   if (typeof window !== 'undefined' && 'speechSynthesis' in window)
                     window.speechSynthesis.cancel();
                 }}
-                className="flex-1 py-4 rounded-xl text-lg font-bold bg-gray-700 text-white hover:bg-gray-800 active:scale-95 transition shadow-lg"
-              >
-                ⏸ 멈추기
-              </button>
-            )}
-          </div>
-        )}
-
-        {script && !playing && (
-          <div className="mt-6 bg-white rounded-xl p-5 shadow border border-amber-200">
-            <p className="text-sm text-amber-700 font-semibold mb-2">📝 전체 설명</p>
-            <p className="text-amber-900 leading-relaxed whitespace-pre-line">
-              {script}
-            </p>
-          </div>
-        )}
-
-        {error && (
-          <div className="mt-4 bg-red-50 border-2 border-red-300 text-red-800 px-4 py-3 rounded-xl">
-            {error}
-          </div>
-        )}
-
-        {audioUrl && (
-          <audio
-            ref={audioRef}
-            src={audioUrl}
-            onEnded={() => setPlaying(false)}
-            className="hidden"
-          />
-        )}
-      </div>
-
-      <style jsx global>{`
-        @keyframes kenburns {
-          0% { transform: scale(1) translate(0, 0); }
-          100% { transform: scale(1.15) translate(-2%, -2%); }
-        }
-        .animate-kenburns { animation: kenburns 20s ease-out forwards; }
-        @keyframes fadeup {
-          0% { opacity: 0; transform: translateY(20px); }
-          100% { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fadeup { animation: fadeup 0.5s ease-out; }
-      `}</style>
-    </div>
-  );
-}
+                className="flex-1 py-4 rounded-xl text-lg font-bol
