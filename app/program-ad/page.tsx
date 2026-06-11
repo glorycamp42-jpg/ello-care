@@ -272,4 +272,27 @@ export default function ProgramAd() {
                   if (typeof window !== 'undefined' && 'speechSynthesis' in window)
                     window.speechSynthesis.cancel();
                 }}
-                className="flex-1 py-4 rounded-xl text-lg font-bol
+                className="flex-1 py-4 rounded-xl text-lg font-bold bg-gray-600 text-white hover:bg-gray-700 active:scale-95 transition shadow-lg"
+              >
+                ⏹ 멈추기
+              </button>
+            )}
+          </div>
+        )}
+
+        {error && (
+          <p className="mt-4 text-center text-red-600 font-semibold">{error}</p>
+        )}
+
+        {audioUrl && (
+          <audio
+            ref={audioRef}
+            src={audioUrl}
+            onEnded={() => setPlaying(false)}
+            className="hidden"
+          />
+        )}
+      </div>
+    </div>
+  );
+}
