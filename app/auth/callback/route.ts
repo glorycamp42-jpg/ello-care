@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const code = searchParams.get("code");
+  const next = searchParams.get("next");
   const origin = req.nextUrl.origin;
 
   if (!code) {
@@ -60,7 +61,7 @@ export async function GET(req: NextRequest) {
   console.log(`[auth/callback] User: ${data.session.user.email}, role: ${role}`);
 
   // Redirect based on role (cookies already set on response)
-  const redirectUrl = role === "family" ? `${origin}/family` : `${origin}/`;
+  const redirectUrl = next && next.startsWith("/") ? `${origin}${next}` : role === "family" ? `${origin}/family` : `${origin}/`;
   response.headers.set("Location", redirectUrl);
 
   return response;
