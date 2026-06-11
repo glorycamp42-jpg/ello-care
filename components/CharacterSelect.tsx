@@ -154,7 +154,10 @@ export default function CharacterSelect({ onSelect, initialId }: CharacterSelect
             return (
               <button
                 key={p.id}
-                onClick={() => setSelected(p.id)}
+                onClick={() => {
+                  setSelected(p.id);
+                  onSelect(p);
+                }}
                 className={`
                   relative flex flex-col items-center text-center
                   px-3 pt-5 pb-4 rounded-2xl
