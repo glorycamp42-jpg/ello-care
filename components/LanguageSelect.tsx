@@ -41,7 +41,11 @@ export default function LanguageSelect({ onSelect, initialCode }: LanguageSelect
             return (
               <button
                 key={lang.code}
-                onClick={() => setSelected(lang.code)}
+                onClick={() => {
+                  setSelected(lang.code);
+                  saveLang(lang.code);
+                  onSelect(lang);
+                }}
                 className={`
                   relative flex flex-col items-center text-center
                   px-3 pt-5 pb-4 rounded-2xl
