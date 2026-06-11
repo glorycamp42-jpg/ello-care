@@ -62,6 +62,9 @@ export default function AdminPage() {
   const [tab, setTab] = useState<Tab>("wellness");
   const [denied, setDenied] = useState(false);
   const [deniedInfo, setDeniedInfo] = useState("");
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPw, setLoginPw] = useState("");
+  const [loginErr, setLoginErr] = useState("");
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
 
@@ -180,6 +183,18 @@ export default function AdminPage() {
     loadAll();
   }
 
+  async function adminLogin() {
+    setLoginErr("");
+    const { error } = await supabase.auth.signInWithPassword({ email: loginEmail.trim(), password: loginPw });
+    if (error) { setLoginErr("로그인 실패: " + error.message); return; }
+    location.reload();
+  }
+
+  async function adminGoogle() {
+    setLoginErr("");
+    await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin + "/auth/callback?next=/admin" } });
+  }
+
   if (denied) {
     return (
       <div className="flex flex-col items-center justify-center h-dvh bg-gray-50 px-6">
@@ -187,6 +202,14 @@ export default function AdminPage() {
         <p className="text-xl font-bold text-gray-800">관리자 권한이 없습니다</p>
         <p className="text-sm text-gray-500 mt-2">관리자 계정으로 로그인해주세요</p>
         {deniedInfo && <p className="text-xs text-gray-400 mt-3">현재 인식된 계정: {deniedInfo}</p>}
+        <div className="w-full max-w-xs mt-6 space-y-3">
+          <button onClick={adminGoogle} className="w-full py-3 rounded-xl bg-white border border-gray-300 font-bold text-gray-700">Google로 로그인</button>
+          <div className="text-center text-xs text-gray-400">또는 이메일로 로그인</div>
+          <input value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} placeholder="이메일" type="email" className="w-full p-3 rounded-xl border border-gray-300" />
+          <input value={loginPw} onChange={(e) => setLoginPw(e.target.value)} placeholder="비밀번호" type="password" className="w-full p-3 rounded-xl border border-gray-300" />
+          <button onClick={adminLogin} className="w-full py-3 rounded-xl bg-blue-600 text-white font-bold">로그인</button>
+          {loginErr && <p className="text-sm text-red-500 text-center">{loginErr}</p>}
+        </div>
       </div>
     );
   }
