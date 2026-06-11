@@ -30,7 +30,7 @@ async function requireAdmin(): Promise<{ ok: boolean; email?: string }> {
     if (user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase())) {
       return { ok: true, email: user.email };
     }
-    return { ok: false };
+    return { ok: false, email: user?.email || undefined };
   } catch {
     return { ok: false };
   }
@@ -38,7 +38,12 @@ async function requireAdmin(): Promise<{ ok: boolean; email?: string }> {
 
 export async function GET(req: NextRequest) {
   const auth = await requireAdmin();
-  if (!auth.ok) return NextResponse.json({ error: "관리자 권한이 없습니다" }, { status: 403 });
+  if (!auth.ok) {
+    return NextResponse.json(
+      { error: "관리자 권한이 없습니다", current: auth.email || "(로그인 세션 없음)" },
+      { status: 403 }
+    );
+  }
 
   const resource = req.nextUrl.searchParams.get("resource");
   const admin = getElloAdmin();
