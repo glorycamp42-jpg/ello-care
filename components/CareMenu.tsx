@@ -119,7 +119,7 @@ export default function CareMenu() {
 
       {/* 펼쳐진 메뉴 */}
       {open && (
-        <div className="fixed right-4 bottom-44 z-[94] flex flex-col gap-2.5 items-end">
+        <div className="fixed right-3 top-[136px] z-[94] flex flex-col gap-2.5 items-end">
           <button
             onClick={() => {
               setOpen(false);
@@ -154,7 +154,7 @@ export default function CareMenu() {
       <button
         onClick={() => setOpen(!open)}
         aria-label="안심 메뉴"
-        className={`fixed right-4 bottom-28 z-[94] w-[60px] h-[60px] rounded-full shadow-xl flex items-center justify-center text-2xl active:scale-90 transition-all ${
+        className={`fixed right-3 top-[76px] z-[94] w-[52px] h-[52px] rounded-full shadow-xl flex items-center justify-center text-xl active:scale-90 transition-all ${
           open ? "bg-warm-gray text-white rotate-45" : "bg-red-500 text-white"
         }`}
       >
