@@ -180,7 +180,7 @@ export default function AdminPage() {
 
   if (denied) {
     return (
-      <div className="flex/flex-col items-center justify-center h-dvh bg-gray-50 px-6">
+      <div className="flex flex-col items-center justify-center h-dvh bg-gray-50 px-6">
         <p className="text-5xl mb-4">🔒</p>
         <p className="text-xl font-bold text-gray-800">관리자 권한이 없습니다</p>
         <p className="text-sm text-gray-500 mt-2">관리자 계정으로 로그인해주세요</p>
