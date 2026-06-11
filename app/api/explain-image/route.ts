@@ -56,4 +56,31 @@ export async function POST(request: NextRequest) {
               },
             ],
           },
-     
+        ],
+      }),
+    });
+
+    if (!r.ok) {
+      const errText = await r.text();
+      let msg = `Anthropic API 오류 (${r.status})`;
+      try {
+        const j = JSON.parse(errText);
+        if (j?.error?.message) msg = `${msg}: ${j.error.message}`;
+      } catch {}
+      return NextResponse.json({ error: msg }, { status: r.status });
+    }
+
+    const data = await r.json();
+    const script = data?.content?.[0]?.text ?? '';
+    if (!script) {
+      return NextResponse.json({ error: 'AI 응답이 비어 있습니다' }, { status: 502 });
+    }
+
+    return NextResponse.json({ script });
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : '서버 오류가 발생했습니다' },
+      { status: 500 }
+    );
+  }
+}
