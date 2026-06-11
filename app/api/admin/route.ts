@@ -22,8 +22,21 @@ function getTotalmedixAdmin() {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
-// 세션에서 관리자 여부 확인
-async function requireAdmin(): Promise<{ ok: boolean; email?: string }> {
+// 관리자 여부 확인: Bearer 토큰 우선, 쿠키 세션 fallback
+async function requireAdmin(req: NextRequest): Promise<{ ok: boolean; email?: string }> {
+  // 1) Authorization: Bearer <access_token>
+  try {
+    const authHeader = req.headers.get("authorization") || "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+    if (token) {
+      const { data: { user } } = await getElloAdmin().auth.getUser(token);
+      if (user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase())) {
+        return { ok: true, email: user.email };
+      }
+      if (user?.email) return { ok: false, email: user.email };
+    }
+  } catch {}
+  // 2) 쿠키 세션
   try {
     const supabase = createServerSupabase();
     const { data: { user } } = await supabase.auth.getUser();
@@ -37,7 +50,7 @@ async function requireAdmin(): Promise<{ ok: boolean; email?: string }> {
 }
 
 export async function GET(req: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireAdmin(req);
   if (!auth.ok) {
     return NextResponse.json(
       { error: "관리자 권한이 없습니다", current: auth.email || "(로그인 세션 없음)" },
@@ -125,7 +138,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireAdmin(req);
   if (!auth.ok) return NextResponse.json({ error: "관리자 권한이 없습니다" }, { status: 403 });
 
   const body = await req.json();
@@ -193,7 +206,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireAdmin(req);
   if (!auth.ok) return NextResponse.json({ error: "관리자 권한이 없습니다" }, { status: 403 });
 
   const body = await req.json();
