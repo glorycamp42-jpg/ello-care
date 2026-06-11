@@ -1,6 +1,18 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { createClient } from "@/lib/supabase/client";
+
+const supabase = createClient();
+
+async function authHeaders(): Promise<Record<string, string>> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+  } catch {
+    return {};
+  }
+}
 
 interface AdminUser {
   id: string;
@@ -69,11 +81,12 @@ export default function AdminPage() {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
+      const h = await authHeaders();
       const [u, l, a, w] = await Promise.all([
-        fetch("/api/admin?resource=users").then((r) => (r.status === 403 ? null : r.json())),
-        fetch("/api/admin?resource=links").then((r) => r.json()),
-        fetch("/api/admin?resource=adhc").then((r) => r.json()),
-        fetch("/api/admin?resource=wellness").then((r) => r.json()),
+        fetch("/api/admin?resource=users", { headers: h }).then((r) => (r.status === 403 ? null : r.json())),
+        fetch("/api/admin?resource=links", { headers: h }).then((r) => r.json()),
+        fetch("/api/admin?resource=adhc", { headers: h }).then((r) => r.json()),
+        fetch("/api/admin?resource=wellness", { headers: h }).then((r) => r.json()),
       ]);
       if (!u) {
         setDenied(true);
@@ -112,7 +125,7 @@ export default function AdminPage() {
     }
     const res = await fetch("/api/admin", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
       body: JSON.stringify({
         resource: "link",
         family_id: linkFamily,
@@ -129,7 +142,7 @@ export default function AdminPage() {
   async function removeLink(id: string) {
     await fetch("/api/admin", {
       method: "DELETE",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
       body: JSON.stringify({ resource: "link", id }),
     });
     setMsg("연결 해제됨");
@@ -143,7 +156,7 @@ export default function AdminPage() {
     }
     const res = await fetch("/api/admin", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
       body: JSON.stringify({
         resource: "adhc",
         ello_user_id: adhcElder,
@@ -158,7 +171,7 @@ export default function AdminPage() {
   async function removeAdhc(id: string) {
     await fetch("/api/admin", {
       method: "DELETE",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
       body: JSON.stringify({ resource: "adhc", id }),
     });
     setMsg("ADHC 연결 비활성화됨");
@@ -167,7 +180,7 @@ export default function AdminPage() {
 
   if (denied) {
     return (
-      <div className="flex flex-col items-center justify-center h-dvh bg-gray-50 px-6">
+      <div className="flex/flex-col items-center justify-center h-dvh bg-gray-50 px-6">
         <p className="text-5xl mb-4">🔒</p>
         <p className="text-xl font-bold text-gray-800">관리자 권한이 없습니다</p>
         <p className="text-sm text-gray-500 mt-2">관리자 계정으로 로그인해주세요</p>
