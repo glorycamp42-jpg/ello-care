@@ -27,6 +27,7 @@ export default function FamilyHome() {
   const [elderId, setElderId] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(false);
   const [lastLocation, setLastLocation] = useState<LocationData | null>(null);
+  const [wellness, setWellness] = useState<{ status: string; lastActivity: string | null; source: string | null; hoursAgo: number | null } | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -55,6 +56,16 @@ export default function FamilyHome() {
       console.log("[family] appointments:", data.appointments?.length);
     } catch (err) {
       console.error("[family] appointments fetch failed:", err);
+    }
+
+    // 2.5 안부 확인 (무응답 감지)
+    try {
+      const wres = await fetch(`/api/wellness-check?userId=${familyId}`);
+      const wdata = await wres.json();
+      setWellness(wdata);
+      console.log("[family] wellness:", wdata);
+    } catch (err) {
+      console.error("[family] wellness fetch failed:", err);
     }
 
     // 3. Fetch latest GPS location (try familyId, GPS might be under elder's ID)
@@ -146,6 +157,44 @@ export default function FamilyHome() {
 
       {/* ── Content ── */}
       <div className="px-5 -mt-3">
+
+        {/* 안부 확인 (무응답 감지) */}
+        {wellness && wellness.status !== "unknown" && (
+          <div className={`rounded-xl shadow-sm p-4 mb-4 ${
+            wellness.status === "ok" ? "bg-white" :
+            wellness.status === "warn" ? "bg-amber-50 border border-amber-200" :
+            "bg-red-50 border border-red-200"
+          }`}>
+            <div className="flex items-center gap-3">
+              <span className={`w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0 ${
+                wellness.status === "ok" ? "bg-green-50" :
+                wellness.status === "warn" ? "bg-amber-100" : "bg-red-100"
+              }`}>
+                {wellness.status === "ok" ? "💚" : wellness.status === "warn" ? "⚠️" : "🚨"}
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className={`font-bold text-sm ${
+                  wellness.status === "ok" ? "text-gray-900" :
+                  wellness.status === "warn" ? "text-amber-800" : "text-red-700"
+                }`}>
+                  {wellness.status === "ok" && "안부 양호"}
+                  {wellness.status === "warn" && "하루 이상 소식이 없어요"}
+                  {wellness.status === "alert" && "이틀 이상 활동이 없어요!"}
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {wellness.lastActivity
+                    ? `마지막 활동: ${timeAgo(wellness.lastActivity)} (${wellness.source === "conversation" ? "대화" : "위치"})`
+                    : "활동 기록이 아직 없어요"}
+                </p>
+              </div>
+            </div>
+            {wellness.status === "alert" && (
+              <p className="text-xs text-red-600 font-semibold mt-2 pl-13">
+                전화나 방문으로 직접 안부를 확인해보세요.
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Stats row */}
         <div className="grid grid-cols-2 gap-3 mb-4">
