@@ -61,6 +61,7 @@ function wellnessStatus(iso: string | undefined): { icon: string; label: string;
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>("wellness");
   const [denied, setDenied] = useState(false);
+  const [deniedInfo, setDeniedInfo] = useState("");
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
 
@@ -83,12 +84,13 @@ export default function AdminPage() {
     try {
       const h = await authHeaders();
       const [u, l, a, w] = await Promise.all([
-        fetch("/api/admin?resource=users", { headers: h }).then((r) => (r.status === 403 ? null : r.json())),
+        fetch("/api/admin?resource=users", { headers: h }).then(async (r) => (r.status === 403 ? { __denied: await r.json() } : r.json())),
         fetch("/api/admin?resource=links", { headers: h }).then((r) => r.json()),
         fetch("/api/admin?resource=adhc", { headers: h }).then((r) => r.json()),
         fetch("/api/admin?resource=wellness", { headers: h }).then((r) => r.json()),
       ]);
-      if (!u) {
+      if (!u || u.__denied) {
+        setDeniedInfo(u && u.__denied ? u.__denied.current || "" : "(세션 없음)");
         setDenied(true);
         return;
       }
@@ -184,6 +186,7 @@ export default function AdminPage() {
         <p className="text-5xl mb-4">🔒</p>
         <p className="text-xl font-bold text-gray-800">관리자 권한이 없습니다</p>
         <p className="text-sm text-gray-500 mt-2">관리자 계정으로 로그인해주세요</p>
+        {deniedInfo && <p className="text-xs text-gray-400 mt-3">현재 인식된 계정: {deniedInfo}</p>}
       </div>
     );
   }
