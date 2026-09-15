@@ -20,14 +20,19 @@ function getClients() {
   return { totalmedixAdmin: createClient(tmUrl, tmKey, opts), elloAdmin: createClient(url, key, opts) }
 }
 
-// Simple in-memory rate limit per IP (4-digit PIN brute-force guard). Resets on cold start.
-const attempts = new Map<string, { count: number; resetAt: number }>()
+// In-memory brute-force guard: counts only FAILED PIN attempts per IP (successful logins are free,
+// since many elders at one day-care center share a single NAT IP). Resets on cold start.
+const failures = new Map<string, { count: number; resetAt: number }>()
+const MAX_FAILS = 25
 function rateLimited(ip: string): boolean {
+  const rec = failures.get(ip)
+  return !!rec && rec.resetAt > Date.now() && rec.count >= MAX_FAILS
+}
+function recordFailure(ip: string) {
   const now = Date.now()
-  const rec = attempts.get(ip)
-  if (!rec || rec.resetAt < now) { attempts.set(ip, { count: 1, resetAt: now + 10 * 60 * 1000 }); return false }
-  rec.count += 1
-  return rec.count > 10
+  const rec = failures.get(ip)
+  if (!rec || rec.resetAt < now) failures.set(ip, { count: 1, resetAt: now + 10 * 60 * 1000 })
+  else rec.count += 1
 }
 
 export async function POST(req: NextRequest) {
@@ -56,6 +61,7 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (linkError || !link) {
+      recordFailure(ip)
       return NextResponse.json({ error: 'PIN 번호가 올바르지 않습니다' }, { status: 401 })
     }
 

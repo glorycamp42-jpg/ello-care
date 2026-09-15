@@ -31,12 +31,5 @@ self.addEventListener("fetch", (e) => {
     return;
   }
 
-  // Pages: network-first, fall back to cache when offline
-  e.respondWith(fetch(req).then((res) => {
-    if (res.ok && req.mode === "navigate") {
-      const copy = res.clone();
-      caches.open(VERSION).then((c) => c.put(req, copy)).catch(() => {});
-    }
-    return res;
-  }).catch(() => caches.match(req)));
+  // Pages/other: always network (never serve a stale page after a deploy)
 });

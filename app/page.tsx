@@ -324,8 +324,12 @@ export default function Home() {
 
   // CareMenu (layout-level) asks the page to open full-screen sub pages via events
   useEffect(() => {
-    const openSafety = () => setShowSafety(true);
-    const openBible = () => setShowBible(true);
+    const closeAll = () => {
+      setShowBible(false); setShowSafety(false); setShowTicketPage(false); setShowReminders(false);
+      setShowPlayground(false); setShowHealthWallet(false); setShowMedications(false);
+    };
+    const openSafety = () => { closeAll(); setShowSafety(true); };
+    const openBible = () => { closeAll(); setShowBible(true); };
     window.addEventListener("ello:open-safety", openSafety);
     window.addEventListener("ello:open-bible", openBible);
     return () => {

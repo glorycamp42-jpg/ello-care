@@ -157,6 +157,7 @@ export async function POST(req: NextRequest) {
           elder_id,
           relationship: relationship || "가족",
           elder_name: elder_name || "어르신",
+          status: "accepted",
         })
         .select()
         .single();

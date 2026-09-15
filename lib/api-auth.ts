@@ -79,7 +79,7 @@ export async function canAccessElder(caller: Caller, elderId: string): Promise<b
     .select("id")
     .eq("family_id", caller.id)
     .eq("elder_id", elderId)
-    .eq("status", "accepted")
+    .in("status", ["accepted", "active"])
     .limit(1);
   return !!(data && data.length > 0);
 }
