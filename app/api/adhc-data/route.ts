@@ -1,21 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireElderAccess } from '@/lib/api-auth'
 
-// ello-care Supabase (adhc_connections 테이블 조회용)
-const elloCareSupabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+export const dynamic = 'force-dynamic'
 
-// totalmedix Supabase (participants, attendance 등 ADHC 데이터)
-const totalmedixSupabase = createClient(
-  process.env.TOTALMEDIX_SUPABASE_URL!,
-  process.env.TOTALMEDIX_SUPABASE_SERVICE_ROLE_KEY!
-)
+// Lazy clients: never crash at import time if an env var is missing
+function getClients() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const tmUrl = process.env.TOTALMEDIX_SUPABASE_URL
+  const tmKey = process.env.TOTALMEDIX_SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key || !tmUrl || !tmKey) return null
+  const opts = { auth: { autoRefreshToken: false, persistSession: false } }
+  return {
+    elloCareSupabase: createClient(url, key, opts),
+    totalmedixSupabase: createClient(tmUrl, tmKey, opts),
+  }
+}
 
 export async function GET(req: NextRequest) {
-  const elderId = req.nextUrl.searchParams.get('elderId')
-  if (!elderId) return NextResponse.json({ error: 'elderId 필요' }, { status: 400 })
+  const clients = getClients()
+  if (!clients) return NextResponse.json({ connected: false, error: 'not configured' }, { status: 503 })
+  const { elloCareSupabase, totalmedixSupabase } = clients
+
+  const auth = await requireElderAccess(req, req.nextUrl.searchParams.get('elderId'))
+  if (!auth.ok) return auth.response
+  const elderId = auth.elderId
 
   try {
     // 1. ello-care의 adhc_connections 테이블에서 participant_id 조회

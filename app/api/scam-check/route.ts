@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getCaller } from "@/lib/api-auth";
 
 export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
+  const caller = await getCaller(request);
+  if (!caller) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   try {
     const { imageBase64, mediaType, text } = await request.json();
     if (!imageBase64 && !text) {
@@ -46,7 +49,7 @@ export async function POST(request: NextRequest) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-3-5-sonnet-20241022',
+        model: 'claude-sonnet-4-6',
         max_tokens: 500,
         messages: [{ role: 'user', content }],
       }),

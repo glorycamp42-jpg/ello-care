@@ -3,6 +3,18 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 
+// DB columns are lat / lng / recorded_at
+function toLocation(row: Record<string, unknown>): LocationData {
+  return {
+    id: String(row.id ?? ""),
+    user_id: String(row.user_id ?? ""),
+    latitude: Number(row.lat ?? row.latitude ?? 0),
+    longitude: Number(row.lng ?? row.longitude ?? 0),
+    accuracy: row.accuracy == null ? null : Number(row.accuracy),
+    created_at: String(row.recorded_at ?? row.created_at ?? ""),
+  };
+}
+
 interface LocationData {
   id: string;
   user_id: string;
@@ -42,12 +54,13 @@ export default function LocationPage() {
       .from("gps_locations")
       .select("*")
       .eq("user_id", eid)
-      .order("created_at", { ascending: false })
+      .order("recorded_at", { ascending: false })
       .limit(10);
 
     if (locData && locData.length > 0) {
-      setCurrent(locData[0]);
-      setHistory(locData);
+      const rows = locData.map(toLocation);
+      setCurrent(rows[0]);
+      setHistory(rows);
     }
     setLoading(false);
 
@@ -56,7 +69,7 @@ export default function LocationPage() {
       .channel("gps-realtime")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "gps_locations", filter: `user_id=eq.${eid}` },
         (payload) => {
-          const loc = payload.new as LocationData;
+          const loc = toLocation(payload.new as Record<string, unknown>);
           setCurrent(loc);
           setHistory((prev) => [loc, ...prev].slice(0, 10));
         })

@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getCaller } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
+  const caller = await getCaller(req);
+  if (!caller) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) {
     console.error("[tts] ELEVENLABS_API_KEY is not set");
@@ -29,8 +32,9 @@ export async function POST(req: NextRequest) {
 
     console.log(`[tts] voiceId=${voiceId}, lang=${languageCode || "auto"}, text length=${text.length}`);
 
-    const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+    const FALLBACK_VOICE = "xi3rF0t7dg7uN2M0WUhr"; // granddaughter voice — known to exist on this account
+    const callTts = (vid: string) => fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${vid}`,
       {
         method: "POST",
         headers: {
@@ -53,6 +57,13 @@ export async function POST(req: NextRequest) {
         }),
       }
     );
+
+    let response = await callTts(voiceId);
+    // Unknown/unavailable voice id → retry once with the fallback voice instead of going silent
+    if ((response.status === 404 || response.status === 400 || response.status === 422) && voiceId !== FALLBACK_VOICE) {
+      console.warn(`[tts] voice ${voiceId} failed (${response.status}); retrying with fallback voice`);
+      response = await callTts(FALLBACK_VOICE);
+    }
 
     if (!response.ok) {
       const error = await response.text();

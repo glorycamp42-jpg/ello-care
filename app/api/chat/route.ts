@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { getCaller, canAccessElder } from "@/lib/api-auth";
 
 /* ── Local-date helper (uses the user's device timezone, not server TZ) ── */
 // The client sends its IANA timezone (e.g. "America/Los_Angeles") in body.timezone.
@@ -115,12 +116,14 @@ const PERSONA_PROMPTS: Record<string, string> = {
 - Never sound male — you are a caring female church friend`,
 
   assistant:
-    `You are a capable, professional AI assistant who is also warm and kind.
-- Help with practical tasks: schedules, medicine reminders, appointments
-- Be proactive: "약 드실 시간이에요" or "Tomorrow's appointment is at 2pm"
-- Organize information clearly but conversationally (no bullet points)
-- Always use polite/respectful speech
-- Balance professionalism with warmth — you care about their wellbeing`,
+    `You are 소연, the user's personal secretary (개인 비서) — organized, reliable, warm, never stiff.
+- Your job: know the user's day before they ask. On the first message of a conversation, call get_appointments (and get_memories) and open with a brief rundown: what is scheduled today, anything tomorrow, and which medications are due (from the health context) — e.g. "오늘 오후 두 시에 병원 예약 있으시고요, 아침 약은 드셨어요?"
+- Track everything: any date, time, place, doctor, pharmacy, church event, or family visit the user mentions → call set_reminder immediately. Confirm briefly.
+- Remember everything: names, preferences, routines → save_memory. Use them later without being asked.
+- When they ask "뭐 있지?", "오늘 뭐 해야 돼?", "약 언제 먹지?" — answer from the tools, precisely (date, time, place), never vaguely.
+- Speak like a polished, caring 비서: polite 존댓말, short and clear, one thing at a time. You may use up to 3 sentences when listing the day's schedule; otherwise keep the 2-sentence rule.
+- If nothing is scheduled, say so and offer to add something.
+- Never invent appointments or medications you did not get from tools or the health context.`,
 };
 
 const IMAGE_PROMPT = `The user is showing you a document or photo. Explain it simply in the user's language.`;
@@ -315,7 +318,13 @@ async function executeSearchNews(query: string, language: string = "ko"): Promis
   }
 }
 
-async function executeSetReminder(date: string, time: string, content: string, elderId: string): Promise<string> {
+function localDateString(timezone: string, offsetDays = 0): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + offsetDays);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+}
+
+async function executeSetReminder(date: string, time: string, content: string, elderId: string, timezone: string = "America/Los_Angeles"): Promise<string> {
   const supabase = getSupabaseAdmin();
   if (!supabase || elderId === "default") {
     console.error("[tool:reminder] Cannot save - no DB or elderId is default");
@@ -323,28 +332,25 @@ async function executeSetReminder(date: string, time: string, content: string, e
   }
 
   try {
-    // Parse date/time into scheduled_at
-    const now = new Date();
+    // Parse date/time into scheduled_at (dates computed in the user's timezone, not server UTC)
     let scheduledAt = "";
 
-    // Try to build a date string from the inputs
     const dateStr = date || "";
     const timeStr = time || "09:00";
 
-    // Handle relative dates
-    if (/내일|tomorrow/i.test(dateStr)) {
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      scheduledAt = tomorrow.toISOString().split("T")[0];
-    } else if (/모레/i.test(dateStr)) {
-      const dayAfter = new Date(now);
-      dayAfter.setDate(dayAfter.getDate() + 2);
-      scheduledAt = dayAfter.toISOString().split("T")[0];
-    } else if (/오늘|today/i.test(dateStr)) {
-      scheduledAt = now.toISOString().split("T")[0];
+    const explicitIso = dateStr.match(/(\d{4})-(\d{2})-(\d{2})/);
+    const koreanMd = dateStr.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일/);
+    if (explicitIso) {
+      scheduledAt = `${explicitIso[1]}-${explicitIso[2]}-${explicitIso[3]}`;
+    } else if (/내일|tomorrow/i.test(dateStr)) {
+      scheduledAt = localDateString(timezone, 1);
+    } else if (/모레|day after/i.test(dateStr)) {
+      scheduledAt = localDateString(timezone, 2);
+    } else if (koreanMd) {
+      const year = localDateString(timezone).slice(0, 4);
+      scheduledAt = `${year}-${koreanMd[1].padStart(2, "0")}-${koreanMd[2].padStart(2, "0")}`;
     } else {
-      // Try to parse as-is or use today
-      scheduledAt = now.toISOString().split("T")[0];
+      scheduledAt = localDateString(timezone);
     }
 
     // Parse time
@@ -397,15 +403,39 @@ async function executeSetReminder(date: string, time: string, content: string, e
   }
 }
 
-async function executeAlertFamily(message: string, urgency: string): Promise<string> {
-  console.log(`[tool:alert] EMERGENCY: urgency=${urgency}, message=${message}`);
-  // In production, this would send SMS/push notification
-  return JSON.stringify({
-    alerted: true,
-    message,
-    urgency: urgency || "medium",
-    note: "Family contacts will be notified. Emergency services can be reached at 911.",
-  });
+async function executeAlertFamily(message: string, urgency: string, elderId: string): Promise<string> {
+  console.log(`[tool:alert] EMERGENCY: urgency=${urgency}, message=${message}, elder=${elderId}`);
+  const admin = getSupabaseAdmin();
+  if (!admin || elderId === "default") {
+    return JSON.stringify({ alerted: false, reason: "no valid user", note: "Tell the user to call 911 if it is an emergency." });
+  }
+  try {
+    const { data: loc } = await admin.from("gps_locations").select("lat, lng").eq("user_id", elderId)
+      .order("recorded_at", { ascending: false }).limit(1).maybeSingle();
+
+    const { data: sos, error } = await admin.from("sos_events").insert({
+      elder_id: elderId, lat: loc?.lat ?? null, lng: loc?.lng ?? null, status: "active",
+    }).select().single();
+    if (error || !sos) {
+      console.error("[tool:alert] sos_events insert failed:", error?.message);
+      return JSON.stringify({ alerted: false, error: error?.message });
+    }
+
+    const { data: links } = await admin.from("family_links").select("family_id").eq("elder_id", elderId).eq("status", "accepted");
+    const familyIds = (links || []).map((l: { family_id: string }) => l.family_id).filter(Boolean);
+    if (familyIds.length > 0) {
+      await admin.from("sos_notifications").insert(familyIds.map((fid: string) => ({ sos_id: sos.id, family_id: fid, channel: "push", status: "pending" })));
+    }
+    await admin.from("conversations").insert({ elder_id: elderId, role: "assistant", content: `[SOS ${urgency}] ${message}` });
+
+    return JSON.stringify({
+      alerted: true, sosId: sos.id, familyNotified: familyIds.length, message, urgency: urgency || "medium",
+      note: familyIds.length > 0 ? "Family has been alerted in the app." : "No family is linked yet. Advise calling 911 if urgent.",
+    });
+  } catch (e) {
+    console.error("[tool:alert] error:", e);
+    return JSON.stringify({ alerted: false, error: String(e) });
+  }
 }
 
 // Trusted places in LA Koreatown — direct recommendations
@@ -558,16 +588,16 @@ async function executeGetAppointments(elderId: string): Promise<string> {
   });
 }
 
-async function executeTool(name: string, input: Record<string, string>, defaultCity: string, elderId: string): Promise<string> {
+async function executeTool(name: string, input: Record<string, string>, defaultCity: string, elderId: string, timezone: string = "America/Los_Angeles"): Promise<string> {
   switch (name) {
     case "get_weather":
       return executeGetWeather(input.city || defaultCity);
     case "search_news":
       return executeSearchNews(input.query || "news", input.language);
     case "set_reminder":
-      return executeSetReminder(input.date, input.time || "", input.content, elderId);
+      return executeSetReminder(input.date, input.time || "", input.content, elderId, timezone);
     case "alert_family":
-      return executeAlertFamily(input.message, input.urgency || "medium");
+      return executeAlertFamily(input.message, input.urgency || "medium", elderId);
     case "find_nearby":
       return executeFindNearby(input.query);
     case "get_appointments":
@@ -1011,6 +1041,8 @@ RESPONSE FORMAT (JSON only, no markdown):
 
 
 /* ── Main Handler ── */
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
   console.log('[chat] API ROUTE CALLED');
   console.log('[init] supabaseAdmin URL:', process.env.NEXT_PUBLIC_SUPABASE_URL?.slice(0, 30));
@@ -1030,6 +1062,7 @@ export async function POST(req: NextRequest) {
     }
 
     const messages: IncomingMessage[] = body.messages;
+    const isGreeting: boolean = !!body.greetingMode;
     const personaId: string = body.persona || "granddaughter";
     const langPrompt: string = body.langPrompt || "You MUST respond ONLY in Korean.";
     const charName: string = body.charName || "소연";
@@ -1048,54 +1081,16 @@ export async function POST(req: NextRequest) {
 
     // Load saved memories for this elder
     let memorySummary = "";
-    // userId: 클라이언트에서 보낸 것 사용, "default"이면 서버에서 쿠키 세션으로 재확인
-    let elderId = body.userId || "default";
-    if (elderId === "default") {
-      try {
-        const cookies = req.headers.get('cookie') || '';
-        console.log('[chat] userId is default, trying cookie recovery. Cookie keys:', cookies.split(';').map(c => c.trim().split('=')[0]).filter(k => k.includes('sb-')).join(', '));
-
-        // Supabase SSR은 쿠키를 chunked로 저장: sb-<ref>-auth-token.0, sb-<ref>-auth-token.1, ...
-        // 또는 단일 쿠키: sb-<ref>-auth-token
-        const cookieMap: Record<string, string> = {};
-        cookies.split(';').forEach(c => {
-          const [key, ...vals] = c.trim().split('=');
-          if (key) cookieMap[key] = vals.join('=');
-        });
-
-        // chunked 쿠키 조립
-        let tokenStr = '';
-        const baseKey = Object.keys(cookieMap).find(k => k.match(/^sb-.*-auth-token$/));
-        if (baseKey && cookieMap[baseKey]) {
-          tokenStr = decodeURIComponent(cookieMap[baseKey]);
-        } else {
-          // chunked: sb-xxx-auth-token.0, sb-xxx-auth-token.1, ...
-          const chunkKeys = Object.keys(cookieMap).filter(k => k.match(/^sb-.*-auth-token\.\d+$/)).sort();
-          if (chunkKeys.length > 0) {
-            tokenStr = chunkKeys.map(k => decodeURIComponent(cookieMap[k])).join('');
-          }
-        }
-
-        if (tokenStr) {
-          console.log('[chat] Found auth token cookie, length:', tokenStr.length);
-          try {
-            const parsed = JSON.parse(tokenStr);
-            const accessToken = parsed?.access_token || (Array.isArray(parsed) ? parsed[0] : null);
-            if (accessToken) {
-              const adminDb = getSupabaseAdmin();
-              if (adminDb) {
-                const { data: { user } } = await adminDb.auth.getUser(accessToken);
-                if (user?.id) {
-                  elderId = user.id;
-                  console.log(`[chat] Recovered userId from cookie: ${elderId}`);
-                }
-              }
-            }
-          } catch (e) { console.log('[chat] Cookie token parse failed:', e); }
-        } else {
-          console.log('[chat] No auth token cookie found');
-        }
-      } catch (e) { console.log('[chat] Cookie auth fallback failed:', e); }
+    // elderId: verified from the Supabase session (cookie / bearer). body.userId is only honored
+    // when the caller is allowed to act for that elder (self, accepted family, admin).
+    const caller = await getCaller(req);
+    if (!caller) {
+      return NextResponse.json({ error: "로그인이 필요합니다.", code: "unauthenticated" }, { status: 401 });
+    }
+    let elderId: string = caller.id;
+    if (body.userId && body.userId !== "default" && body.userId !== caller.id) {
+      if (await canAccessElder(caller, body.userId)) elderId = body.userId;
+      else return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
     }
     console.log(`[chat] Final elderId: ${elderId}`);
     const adminDb = getSupabaseAdmin();
@@ -1228,6 +1223,7 @@ When answering health questions, use this data naturally. For example if asked "
     let finalText = "";
     let attempts = 0;
     const MAX_TOOL_ROUNDS = 3;
+    let reminderSavedViaTool = false;
 
     while (attempts < MAX_TOOL_ROUNDS) {
       attempts++;
@@ -1274,7 +1270,8 @@ When answering health questions, use this data naturally. For example if asked "
         const toolResults = [];
         for (const tool of toolBlocks) {
           console.log(`[chat] Tool call: ${tool.name}(${JSON.stringify(tool.input)})`);
-          const result = await executeTool(tool.name, tool.input, userCity, body.userId || "default");
+          const result = await executeTool(tool.name, tool.input, userCity, elderId, timezone);
+          if (tool.name === "set_reminder") { try { if (JSON.parse(result).saved) reminderSavedViaTool = true; } catch { /* ignore */ } }
           console.log(`[chat] Tool result: ${result.slice(0, 100)}...`);
           toolResults.push({
             type: "tool_result" as const,
@@ -1311,7 +1308,13 @@ When answering health questions, use this data naturally. For example if asked "
 
     let didSave = false;
 
-    if (appointments.length > 0) {
+    if (reminderSavedViaTool) {
+      // set_reminder tool already persisted it — never double-save via tag/extraction
+      didSave = true;
+      console.log("[chat] Appointment saved via set_reminder tool; skipping tag/extraction paths");
+    } else if (isGreeting) {
+      // greeting turn: no appointment extraction
+    } else if (appointments.length > 0) {
       console.log(`[chat] Saving ${appointments.length} inline appointment(s)...`);
       didSave = await saveAppointments(appointments, elderId);
       console.log(`[chat] Inline save result: ${didSave}`);
@@ -1331,7 +1334,7 @@ When answering health questions, use this data naturally. For example if asked "
               "anthropic-version": "2023-06-01",
             },
             body: JSON.stringify({
-              model: "claude-sonnet-4-20250514",
+              model: "claude-sonnet-4-6",
               max_tokens: 300,
               messages: [{
                 role: "user",
@@ -1407,6 +1410,11 @@ AI응답: ${rawText}`,
     const hasKeywords = /병원|약국|ADHC|진료|예약|방문|약속|appointment|doctor|pharmacy|시에|시 에|월.*일/i.test(lastUserMsg + " " + rawText);
     console.log(`[chat] Final response (${text.length} chars), didSave=${didSave}, hasKeywords=${hasKeywords}, elderId=${elderId}`);
 
+    if (isGreeting) {
+      // Greeting is app-initiated: don't store it, don't grant tickets, don't mood-sync
+      return NextResponse.json({ text, appointmentSaved: false, _debug: { elderId, greeting: true } });
+    }
+
     // Save conversation to DB
     await saveConversation(elderId, "user", lastUserMsg);
     await saveConversation(elderId, "assistant", text);
@@ -1424,8 +1432,10 @@ AI응답: ${rawText}`,
       ticketResult = { granted: 0, reason: "exception-outer" };
     }
 
-    // Mood sync to totalmedix (fire-and-forget OK, user confirmed working)
-    triggerMoodSync(elderId, timezone).catch(e => console.error('[mood-sync] error:', e));
+    // Mood sync to totalmedix — throttled: every 4th user message (was: every message)
+    if (messages.filter(m => m.role === "user").length % 4 === 0) {
+      triggerMoodSync(elderId, timezone).catch(e => console.error('[mood-sync] error:', e));
+    }
 
     return NextResponse.json({
       text,

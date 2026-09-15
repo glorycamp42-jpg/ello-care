@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getCaller, canAccessElder } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -27,12 +28,15 @@ export async function GET(req: NextRequest) {
   const admin = getAdmin();
   if (!admin) return NextResponse.json({ error: "Not configured" }, { status: 503 });
 
-  const userId = req.nextUrl.searchParams.get("userId") || "default";
-  if (userId === "default") {
-    return NextResponse.json({ error: "userId 필요" }, { status: 400 });
-  }
+  const caller = await getCaller(req);
+  if (!caller) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  const requested = req.nextUrl.searchParams.get("userId");
+  const userId = requested && requested !== "default" ? requested : caller.id;
 
   const elderId = await resolveElderId(admin, userId);
+  if (!(await canAccessElder(caller, elderId))) {
+    return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
+  }
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   // 최근 7일 대화
@@ -81,7 +85,7 @@ export async function GET(req: NextRequest) {
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-          model: "claude-3-5-haiku-20241022",
+          model: "claude-haiku-4-5-20251001",
           max_tokens: 300,
           messages: [
             {

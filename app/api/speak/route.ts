@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getCaller } from "@/lib/api-auth";
 
 // ElevenLabs 소연 음성 (Voice ID: 6yp5xWNuHEXOVkwW5Ghz)
 // API 키 없으면 503 — 클라이언트가 브라우저 TTS로 폴백
 export async function POST(request: NextRequest) {
+  const caller = await getCaller(request);
+  if (!caller) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   try {
     const { text } = await request.json();
     if (!text) {

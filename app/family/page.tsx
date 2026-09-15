@@ -23,7 +23,10 @@ interface LocationData {
 const supabase = createClient();
 
 export default function FamilyHome() {
-  const [elderName] = useState("할머니");
+  const [elderName, setElderName] = useState("어르신");
+  const [totalTickets, setTotalTickets] = useState(0);
+  const [activity, setActivity] = useState<{ icon: string; text: string; at: string }[]>([]);
+  const [activeSos, setActiveSos] = useState<{ id: string; triggered_at: string } | null>(null);
   const [elderId, setElderId] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(false);
   const [lastLocation, setLastLocation] = useState<LocationData | null>(null);
@@ -48,39 +51,41 @@ export default function FamilyHome() {
     }
     console.log("[family] familyId:", familyId);
 
-    setElderId(familyId);
-
-    // 2. Fetch appointments — API resolves family→elder server-side
+    // 2. Family summary — resolves family→elder server-side and returns name/tickets/location/activity
+    let resolvedElderId = familyId;
     try {
-      const res = await fetch(`/api/appointments?userId=${familyId}`);
+      const sres = await fetch(`/api/family/summary`);
+      const sdata = await sres.json();
+      if (!sdata.error) {
+        resolvedElderId = sdata.elderId || familyId;
+        setElderName(sdata.elderName || "어르신");
+        setTotalTickets(sdata.totalTickets || 0);
+        setActivity(sdata.activity || []);
+        setActiveSos(sdata.activeSos || null);
+        setIsOnline(!!sdata.isOnline);
+        if (sdata.lastLocation) setLastLocation(sdata.lastLocation);
+      }
+    } catch (err) {
+      console.error("[family] summary fetch failed:", err);
+    }
+    setElderId(resolvedElderId);
+
+    // 3. Appointments — API resolves family→elder server-side
+    try {
+      const res = await fetch(`/api/appointments?userId=${resolvedElderId}`);
       const data = await res.json();
       setAppointments(data.appointments || []);
-      console.log("[family] appointments:", data.appointments?.length);
     } catch (err) {
       console.error("[family] appointments fetch failed:", err);
     }
 
-    // 2.5 안부 확인 (무응답 감지)
+    // 4. 안부 확인 (무응답 감지)
     try {
-      const wres = await fetch(`/api/wellness-check?userId=${familyId}`);
+      const wres = await fetch(`/api/wellness-check?userId=${resolvedElderId}`);
       const wdata = await wres.json();
       setWellness(wdata);
-      console.log("[family] wellness:", wdata);
     } catch (err) {
       console.error("[family] wellness fetch failed:", err);
-    }
-
-    // 3. Fetch latest GPS location (try familyId, GPS might be under elder's ID)
-    const { data: locData } = await supabase
-      .from("gps_locations")
-      .select("*")
-      .eq("user_id", familyId)
-      .order("created_at", { ascending: false })
-      .limit(1);
-
-    if (locData?.[0]) {
-      setLastLocation(locData[0]);
-      setIsOnline(Date.now() - new Date(locData[0].created_at).getTime() < 15 * 60 * 1000);
     }
 
     setLoading(false);
@@ -252,6 +257,13 @@ export default function FamilyHome() {
           )}
         </div>
 
+        {activeSos && (
+          <a href={`tel:${""}`} onClick={(e) => e.preventDefault()} className="block bg-red-500 text-white rounded-xl p-4 mb-4 shadow-md">
+            <p className="font-bold text-base">🆘 긴급 알림이 있습니다</p>
+            <p className="text-sm opacity-90 mt-1">{timeAgo(activeSos.triggered_at)} — 어르신께 바로 연락해 주세요</p>
+          </a>
+        )}
+
         {/* Stats row */}
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div className="bg-white rounded-xl shadow-sm p-4">
@@ -266,7 +278,7 @@ export default function FamilyHome() {
               <span className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center text-base">⭐</span>
               <span className="text-gray-400 text-xs">행복티켓</span>
             </div>
-            <p className="text-2xl font-bold text-gray-900">12<span className="text-sm font-normal text-gray-400 ml-1">개</span></p>
+            <p className="text-2xl font-bold text-gray-900">{totalTickets}<span className="text-sm font-normal text-gray-400 ml-1">개</span></p>
           </div>
         </div>
 
@@ -334,21 +346,21 @@ export default function FamilyHome() {
             <span className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center text-base">📋</span>
             <h3 className="font-bold text-sm text-gray-900">최근 활동</h3>
           </div>
-          <div className="space-y-3">
-            {[
-              { icon: "💬", text: "소연이와 대화함", time: "10분 전" },
-              { icon: "✅", text: "안부 체크인 완료", time: "1시간 전" },
-              { icon: "📍", text: "위치 업데이트됨", time: "5분 전" },
-            ].map((a, i) => (
-              <div key={i} className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <span className="text-base">{a.icon}</span>
-                  <span className="text-sm text-gray-600">{a.text}</span>
+          {activity.length === 0 ? (
+            <p className="text-sm text-gray-400">아직 활동 기록이 없습니다</p>
+          ) : (
+            <div className="space-y-3">
+              {activity.map((a, i) => (
+                <div key={i} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-base">{a.icon}</span>
+                    <span className="text-sm text-gray-600">{a.text}</span>
+                  </div>
+                  <span className="text-[11px] text-gray-400">{timeAgo(a.at)}</span>
                 </div>
-                <span className="text-[11px] text-gray-400">{a.time}</span>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* ADHC Activity Tab */}

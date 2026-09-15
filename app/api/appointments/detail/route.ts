@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getCaller, canAccessElder } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,11 @@ export async function GET(req: NextRequest) {
   if (error) {
     console.error("[appointments/detail] Error:", error.message);
     return NextResponse.json({ appointment: null });
+  }
+
+  const caller = await getCaller(req);
+  if (!caller || !(await canAccessElder(caller, data.elder_id))) {
+    return NextResponse.json({ appointment: null, error: "권한이 없습니다." }, { status: caller ? 403 : 401 });
   }
 
   return NextResponse.json({ appointment: data });

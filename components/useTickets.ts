@@ -124,5 +124,33 @@ export function useTickets() {
     });
   }, []);
 
-  return { state, earn, toast, dismissToast: () => setToast(null) };
+  // Pull the authoritative total from the server garden (happiness_tickets / garden_status).
+  // Local state keeps the instant toast UX; the number shown in the header is the server one.
+  const syncFromServer = useCallback(async (userId: string) => {
+    if (!userId || userId === "default") return;
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const res = await fetch(`/api/tickets?userId=${userId}&tz=${encodeURIComponent(tz)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const total = data?.garden?.totalTickets;
+      if (typeof total === "number") {
+        setState((prev) => {
+          const next = { ...prev, total };
+          persist(next);
+          return next;
+        });
+      }
+    } catch {}
+  }, []);
+
+  const setTotal = useCallback((total: number) => {
+    setState((prev) => {
+      const next = { ...prev, total };
+      persist(next);
+      return next;
+    });
+  }, []);
+
+  return { state, earn, toast, dismissToast: () => setToast(null), syncFromServer, setTotal };
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getCaller } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +59,8 @@ If a field is not visible, use empty string. Return ONLY the JSON object.`,
 };
 
 export async function POST(req: NextRequest) {
+  const caller = await getCaller(req);
+  if (!caller) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "API key not configured" }, { status: 500 });

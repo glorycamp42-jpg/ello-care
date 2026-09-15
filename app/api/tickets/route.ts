@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireElderAccess } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -31,9 +32,10 @@ export async function GET(req: NextRequest) {
   const admin = getAdmin();
   if (!admin) return NextResponse.json({ error: "DB not configured" }, { status: 503 });
 
-  const userId = req.nextUrl.searchParams.get("userId");
+  const auth = await requireElderAccess(req, req.nextUrl.searchParams.get("userId"));
+  if (!auth.ok) return auth.response;
+  const userId = auth.elderId;
   const timezone = req.nextUrl.searchParams.get("tz") || "America/Los_Angeles";
-  if (!userId || userId === "default") return NextResponse.json({ error: "userId required" }, { status: 400 });
 
   // garden_status 가져오기 (없으면 생성)
   let { data: garden } = await admin
@@ -113,8 +115,11 @@ export async function POST(req: NextRequest) {
   const admin = getAdmin();
   if (!admin) return NextResponse.json({ error: "DB not configured" }, { status: 503 });
 
-  const { userId, type, moodScore, timezone: bodyTz } = await req.json();
-  if (!userId || userId === "default") return NextResponse.json({ error: "userId required" }, { status: 400 });
+  const body = await req.json();
+  const { type, moodScore, timezone: bodyTz } = body;
+  const auth = await requireElderAccess(req, body.userId);
+  if (!auth.ok) return auth.response;
+  const userId = auth.elderId;
 
   const timezone: string = bodyTz || "America/Los_Angeles";
   const today = todayLocal(timezone);
@@ -228,8 +233,10 @@ export async function PATCH(req: NextRequest) {
   const admin = getAdmin();
   if (!admin) return NextResponse.json({ error: "DB not configured" }, { status: 503 });
 
-  const { userId } = await req.json();
-  if (!userId || userId === "default") return NextResponse.json({ error: "userId required" }, { status: 400 });
+  const body = await req.json();
+  const auth = await requireElderAccess(req, body.userId);
+  if (!auth.ok) return auth.response;
+  const userId = auth.elderId;
 
   const { data: garden } = await admin
     .from("garden_status")

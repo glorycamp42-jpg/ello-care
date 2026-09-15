@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getCaller } from "@/lib/api-auth";
 
 export const maxDuration = 60; // Vercel: 광고 카피 생성에 시간 여유
 
 export async function POST(request: NextRequest) {
+  const caller = await getCaller(request);
+  if (!caller) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   try {
     const { imageBase64, mediaType } = await request.json();
     if (!imageBase64) {
@@ -27,7 +30,7 @@ export async function POST(request: NextRequest) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-3-5-sonnet-20241022',
+        model: 'claude-sonnet-4-6',
         max_tokens: 600,
         messages: [
           {

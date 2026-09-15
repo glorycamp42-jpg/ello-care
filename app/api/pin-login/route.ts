@@ -7,23 +7,43 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-// TotalMedix Supabase (PIN 조회용)
-const totalmedixAdmin = createClient(
-  process.env.TOTALMEDIX_SUPABASE_URL!,
-  process.env.TOTALMEDIX_SUPABASE_SERVICE_ROLE_KEY!
-)
+export const dynamic = 'force-dynamic'
 
-// Ello Care Supabase (세션 생성용)
-const elloAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+// Lazy clients — never crash at import time if an env var is missing
+function getClients() {
+  const tmUrl = process.env.TOTALMEDIX_SUPABASE_URL
+  const tmKey = process.env.TOTALMEDIX_SUPABASE_SERVICE_ROLE_KEY
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!tmUrl || !tmKey || !url || !key) return null
+  const opts = { auth: { autoRefreshToken: false, persistSession: false } }
+  return { totalmedixAdmin: createClient(tmUrl, tmKey, opts), elloAdmin: createClient(url, key, opts) }
+}
+
+// Simple in-memory rate limit per IP (4-digit PIN brute-force guard). Resets on cold start.
+const attempts = new Map<string, { count: number; resetAt: number }>()
+function rateLimited(ip: string): boolean {
+  const now = Date.now()
+  const rec = attempts.get(ip)
+  if (!rec || rec.resetAt < now) { attempts.set(ip, { count: 1, resetAt: now + 10 * 60 * 1000 }); return false }
+  rec.count += 1
+  return rec.count > 10
+}
 
 export async function POST(req: NextRequest) {
   try {
+    const clients = getClients()
+    if (!clients) return NextResponse.json({ error: '서버 설정 오류' }, { status: 503 })
+    const { totalmedixAdmin, elloAdmin } = clients
+
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
+    if (rateLimited(ip)) {
+      return NextResponse.json({ error: '시도 횟수를 초과했습니다. 10분 후 다시 시도해주세요' }, { status: 429 })
+    }
+
     const { pin } = await req.json()
 
-    if (!pin || pin.length < 4) {
+    if (!pin || typeof pin !== 'string' || pin.length < 4) {
       return NextResponse.json({ error: 'PIN 번호를 입력해주세요' }, { status: 400 })
     }
 
@@ -44,9 +64,22 @@ export async function POST(req: NextRequest) {
     const participantName = tmUser?.user?.user_metadata?.name || '어르신'
     const elderEmail = `participant_${link.participant_id}@ellocare.local`
 
-    // 3. Ello Care에서 해당 사용자 찾거나 생성
-    const { data: existingUsers } = await elloAdmin.auth.admin.listUsers()
-    let elloUser = existingUsers?.users?.find(u => u.email === elderEmail)
+    // 3. Ello Care에서 해당 사용자 찾거나 생성 (public.users.email 로 조회 — listUsers 50건 페이지 한계 회피)
+    let elloUser: { id: string } | null = null
+    const { data: existingRow } = await elloAdmin.from('users').select('id').eq('email', elderEmail).maybeSingle()
+    if (existingRow) {
+      elloUser = { id: existingRow.id }
+    } else {
+      // fallback: page through auth users
+      let page = 1
+      while (!elloUser) {
+        const { data: pageData } = await elloAdmin.auth.admin.listUsers({ page, perPage: 200 })
+        const found = pageData?.users?.find(u => u.email === elderEmail)
+        if (found) elloUser = { id: found.id }
+        if (!pageData?.users?.length || pageData.users.length < 200) break
+        page += 1
+      }
+    }
 
     if (!elloUser) {
       // Ello Care에 계정 생성
@@ -59,10 +92,10 @@ export async function POST(req: NextRequest) {
       if (createErr || !newUser?.user) {
         return NextResponse.json({ error: '계정 생성 실패' }, { status: 500 })
       }
-      elloUser = newUser.user
+      elloUser = { id: newUser.user.id }
 
-      // profiles 테이블에도 추가
-      await elloAdmin.from('profiles').upsert({ id: elloUser.id, name: participantName, role: 'elder' })
+      // public.users 테이블에도 추가 (handle_new_user 트리거가 없을 때 대비)
+      await elloAdmin.from('users').upsert({ id: elloUser.id, email: elderEmail, full_name: participantName, role: 'elder' })
     }
 
     // 4. 매직 링크 토큰 생성 (세션 생성용)

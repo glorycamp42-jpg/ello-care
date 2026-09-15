@@ -1,25 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import Anthropic from '@anthropic-ai/sdk'
+import { requireElderAccess } from '@/lib/api-auth'
 
-// ello-care Supabase (conversations 테이블)
-const elloCareSupabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+export const dynamic = 'force-dynamic'
 
-// totalmedix Supabase (ello_mood_summary 테이블)
-const totalmedixSupabase = createClient(
-  process.env.TOTALMEDIX_SUPABASE_URL!,
-  process.env.TOTALMEDIX_SUPABASE_SERVICE_ROLE_KEY!
-)
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+function getClients() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const tmUrl = process.env.TOTALMEDIX_SUPABASE_URL
+  const tmKey = process.env.TOTALMEDIX_SUPABASE_SERVICE_ROLE_KEY
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!url || !key || !tmUrl || !tmKey || !apiKey) return null
+  const opts = { auth: { autoRefreshToken: false, persistSession: false } }
+  return {
+    elloCareSupabase: createClient(url, key, opts),
+    totalmedixSupabase: createClient(tmUrl, tmKey, opts),
+    anthropic: new Anthropic({ apiKey }),
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
-    const { elderId } = await req.json()
-    if (!elderId) return NextResponse.json({ error: 'elderId 필요' }, { status: 400 })
+    const clients = getClients()
+    if (!clients) return NextResponse.json({ error: 'not configured' }, { status: 503 })
+    const { elloCareSupabase, totalmedixSupabase, anthropic } = clients
+
+    const body = await req.json()
+    const auth = await requireElderAccess(req, body.elderId)
+    if (!auth.ok) return auth.response
+    const elderId = auth.elderId
 
     // 1. 오늘 대화 내역 가져오기
     const today = new Date().toISOString().split('T')[0]
@@ -38,7 +48,7 @@ export async function POST(req: NextRequest) {
     const chatLog = conversations.map(c => `${c.role}: ${c.content}`).join('\n')
 
     const analysis = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 500,
       messages: [{
         role: 'user',

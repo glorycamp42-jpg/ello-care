@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireElderAccess } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -15,8 +16,9 @@ export async function GET(req: NextRequest) {
   const admin = getAdmin();
   if (!admin) return NextResponse.json({ messages: [] });
 
-  const userId = req.nextUrl.searchParams.get("userId") || "default";
-  if (userId === "default") return NextResponse.json({ messages: [] });
+  const auth = await requireElderAccess(req, req.nextUrl.searchParams.get("userId"));
+  if (!auth.ok) return auth.response;
+  const userId = auth.elderId;
 
   // Last 24 hours
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -47,8 +49,12 @@ export async function POST(req: NextRequest) {
   const admin = getAdmin();
   if (!admin) return NextResponse.json({ error: "Not configured" }, { status: 503 });
 
-  const { userId, role, content } = await req.json();
-  if (!userId || userId === "default" || !content) {
+  const body = await req.json();
+  const { role, content } = body;
+  const auth = await requireElderAccess(req, body.userId);
+  if (!auth.ok) return auth.response;
+  const userId = auth.elderId;
+  if (!content || (role !== "user" && role !== "assistant")) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
   }
 

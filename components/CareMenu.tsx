@@ -68,6 +68,7 @@ export default function CareMenu() {
       setTimeout(() => setToast(""), 2500);
       setSosConfirm(false);
       setOpen(false);
+      window.dispatchEvent(new Event("ello:open-safety"));
       return;
     }
     // 첫 번째 연락처로 전화
@@ -128,6 +129,24 @@ export default function CareMenu() {
             className="flex items-center gap-2.5 bg-red-500 text-white pl-4 pr-5 py-3.5 rounded-full shadow-lg text-[16px] font-bold active:scale-95 transition-transform"
           >
             <span className="text-xl">🆘</span> 긴급 전화
+          </button>
+          <button
+            onClick={() => {
+              setOpen(false);
+              window.dispatchEvent(new Event("ello:open-safety"));
+            }}
+            className="flex items-center gap-2.5 bg-white text-warm-gray pl-4 pr-5 py-3.5 rounded-full shadow-lg text-[16px] font-bold active:scale-95 transition-transform"
+          >
+            <span className="text-xl">👨‍👩‍👧</span> 안심 연락처
+          </button>
+          <button
+            onClick={() => {
+              setOpen(false);
+              window.dispatchEvent(new Event("ello:open-bible"));
+            }}
+            className="flex items-center gap-2.5 bg-white text-warm-gray pl-4 pr-5 py-3.5 rounded-full shadow-lg text-[16px] font-bold active:scale-95 transition-transform"
+          >
+            <span className="text-xl">📖</span> 오늘의 말씀
           </button>
           <button
             onClick={() => (window.location.href = "/scam-check")}

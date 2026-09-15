@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getCaller, canAccessElder } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -30,12 +31,15 @@ export async function GET(req: NextRequest) {
   const admin = getAdmin();
   if (!admin) return NextResponse.json({ status: "unknown", lastActivity: null });
 
-  const userId = req.nextUrl.searchParams.get("userId") || "default";
-  if (userId === "default") {
-    return NextResponse.json({ status: "unknown", lastActivity: null });
-  }
+  const caller = await getCaller(req);
+  if (!caller) return NextResponse.json({ status: "unknown", lastActivity: null, error: "로그인이 필요합니다." }, { status: 401 });
+  const requested = req.nextUrl.searchParams.get("userId");
+  const userId = requested && requested !== "default" ? requested : caller.id;
 
   const elderId = await resolveElderId(admin, userId);
+  if (!(await canAccessElder(caller, elderId))) {
+    return NextResponse.json({ status: "unknown", lastActivity: null, error: "권한이 없습니다." }, { status: 403 });
+  }
 
   // 최근 대화
   const { data: convo } = await admin

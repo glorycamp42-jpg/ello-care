@@ -1,12 +1,27 @@
 "use client";
 
-import { insertGPSLocation } from "./family-db";
+import { createClient } from "./supabase/client";
 
 let trackingInterval: ReturnType<typeof setInterval> | null = null;
 
 const GPS_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
-async function captureAndSend(userId: string) {
+async function insertLocation(userId: string, lat: number, lng: number, accuracy: number | null): Promise<boolean> {
+  try {
+    const supabase = createClient(); // browser SSR client → carries the session, so RLS (user_id = auth.uid()) passes
+    const { error } = await supabase.from("gps_locations").insert({ user_id: userId, lat, lng, accuracy });
+    if (error) {
+      console.error("[gps] insert error:", error.message);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error("[gps] insert failed:", e);
+    return false;
+  }
+}
+
+function captureAndSend(userId: string) {
   if (typeof navigator === "undefined" || !navigator.geolocation) {
     console.warn("[gps] Geolocation not available");
     return;
@@ -15,14 +30,8 @@ async function captureAndSend(userId: string) {
   navigator.geolocation.getCurrentPosition(
     async (pos) => {
       const { latitude, longitude, accuracy } = pos.coords;
-      console.log(`[gps] Captured: ${latitude.toFixed(5)}, ${longitude.toFixed(5)} (±${accuracy?.toFixed(0)}m)`);
-
-      const ok = await insertGPSLocation(userId, latitude, longitude, accuracy);
-      if (ok) {
-        console.log("[gps] Location saved to Supabase");
-      }
-
-      // Also save locally for quick access
+      const ok = await insertLocation(userId, latitude, longitude, accuracy ?? null);
+      if (ok) console.log(`[gps] Saved ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
       try {
         localStorage.setItem(
           "ello-last-gps",
@@ -33,32 +42,23 @@ async function captureAndSend(userId: string) {
     (err) => {
       console.warn(`[gps] Error: ${err.message}`);
     },
-    { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+    { enableHighAccuracy: false, timeout: 15000, maximumAge: 120000 }
   );
 }
 
 export function startGPSTracking(userId: string) {
-  if (trackingInterval) {
-    console.log("[gps] Already tracking");
-    return;
-  }
+  if (!userId || userId === "default") return;
+  if (trackingInterval) return;
 
-  console.log(`[gps] Starting tracking for user=${userId}, interval=${GPS_INTERVAL_MS / 1000}s`);
-
-  // Capture immediately
+  console.log(`[gps] Starting tracking for user=${userId}, every ${GPS_INTERVAL_MS / 1000}s`);
   captureAndSend(userId);
-
-  // Then every 5 minutes
-  trackingInterval = setInterval(() => {
-    captureAndSend(userId);
-  }, GPS_INTERVAL_MS);
+  trackingInterval = setInterval(() => captureAndSend(userId), GPS_INTERVAL_MS);
 }
 
 export function stopGPSTracking() {
   if (trackingInterval) {
     clearInterval(trackingInterval);
     trackingInterval = null;
-    console.log("[gps] Tracking stopped");
   }
 }
 

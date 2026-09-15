@@ -1,0 +1,42 @@
+/* Ello Care service worker — installability + resilient static caching.
+   Never caches /api or auth routes; pages are network-first with cache fallback. */
+const VERSION = "ello-v1";
+const STATIC = ["/manifest.json", "/icons/icon-192.png", "/icons/icon-512.png",
+  "/characters/grandchild.png", "/characters/friend.png", "/characters/church.png", "/characters/secretary.png"];
+
+self.addEventListener("install", (e) => {
+  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(STATIC)).catch(() => {}));
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (e) => {
+  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k)))));
+  self.clients.claim();
+});
+
+self.addEventListener("fetch", (e) => {
+  const req = e.request;
+  if (req.method !== "GET") return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/auth/")) return;
+
+  // Static assets: cache-first
+  if (/\.(png|svg|ico|woff2?|css|js)$/.test(url.pathname) || url.pathname.startsWith("/_next/static/")) {
+    e.respondWith(caches.match(req).then((hit) => hit || fetch(req).then((res) => {
+      const copy = res.clone();
+      caches.open(VERSION).then((c) => c.put(req, copy)).catch(() => {});
+      return res;
+    })));
+    return;
+  }
+
+  // Pages: network-first, fall back to cache when offline
+  e.respondWith(fetch(req).then((res) => {
+    if (res.ok && req.mode === "navigate") {
+      const copy = res.clone();
+      caches.open(VERSION).then((c) => c.put(req, copy)).catch(() => {});
+    }
+    return res;
+  }).catch(() => caches.match(req)));
+});

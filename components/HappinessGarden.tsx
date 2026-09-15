@@ -127,6 +127,8 @@ export default function HappinessGarden({ userId, onClose, langCode = "ko" }: Pr
 
   useEffect(() => {
     if (userId && userId !== "default") fetchGarden();
+    else setLoading(false); // not logged in yet — show empty garden instead of spinning forever
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   async function fetchGarden() {

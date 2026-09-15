@@ -8,6 +8,7 @@ import SpeakerButton from "@/components/SpeakerButton";
 import CharacterSelect, { PERSONAS, Persona, getPersonaText } from "@/components/CharacterSelect";
 import { createClient } from "@/lib/supabase/client";
 import { useTickets } from "@/components/useTickets";
+import { startGPSTracking, stopGPSTracking } from "@/lib/gps-tracker";
 import TicketToast from "@/components/TicketToast";
 import HappinessGarden from "@/components/HappinessGarden";
 import RemindersPage from "@/components/RemindersPage";
@@ -314,6 +315,32 @@ export default function Home() {
     }
   }
 
+  // Start background GPS sharing once we know who the user is (family app reads it)
+  useEffect(() => {
+    if (userId === "default") return;
+    startGPSTracking(userId);
+    return () => stopGPSTracking();
+  }, [userId]);
+
+  // CareMenu (layout-level) asks the page to open full-screen sub pages via events
+  useEffect(() => {
+    const openSafety = () => setShowSafety(true);
+    const openBible = () => setShowBible(true);
+    window.addEventListener("ello:open-safety", openSafety);
+    window.addEventListener("ello:open-bible", openBible);
+    return () => {
+      window.removeEventListener("ello:open-safety", openSafety);
+      window.removeEventListener("ello:open-bible", openBible);
+    };
+  }, []);
+
+  // Sync ticket total from the server (garden_status is the source of truth)
+  useEffect(() => {
+    if (userId === "default") return;
+    tickets.syncFromServer(userId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -394,7 +421,7 @@ export default function Home() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return null;
     const r = new SR();
-    r.lang = "ko-KR";
+    r.lang = (lang || getSavedLang()).speechLang || "ko-KR";
     // Keep listening through pauses — elderly users speak slowly with breaths
     r.continuous = true;
     // Show interim results so user sees they're being heard
@@ -787,7 +814,16 @@ function ChatUI({
           body: JSON.stringify({ messages: newMsgs, persona: persona.id, langPrompt: lang.systemPrompt, charName: lang.charName, userCity, userId, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
         });
         console.log(`[sendMessage] Response status: ${res.status}`);
+        if (res.status === 401) {
+          // session expired → go back to login instead of a confusing error bubble
+          window.location.href = "/login";
+          return;
+        }
         const data = await res.json();
+        // Header ticket count follows the server total when the chat granted points
+        if (typeof data._debug?.ticketChat?.total === "number") {
+          tickets.setTotal(data._debug.ticketChat.total);
+        }
         console.log(`[sendMessage] appointmentSaved: ${data.appointmentSaved}, debug:`, data._debug);
         if (data._debug?.ticketChat) {
           console.log(`[ticket] chat grant result:`, data._debug.ticketChat);

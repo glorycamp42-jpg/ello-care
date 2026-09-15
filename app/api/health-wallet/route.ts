@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireElderAccess, getCaller, canAccessElder } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -89,11 +90,23 @@ async function updateWithRetry(db: ReturnType<typeof admin>, table: TableName, i
   return { error: lastError };
 }
 
+// Look up the row's owner and verify the caller may act on it
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function denyUnlessOwner(req: NextRequest, db: any, table: TableName, id: string): Promise<NextResponse | null> {
+  const caller = await getCaller(req);
+  if (!caller) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  const { data: row } = await db.from(table).select("user_id").eq("id", id).single();
+  if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!(await canAccessElder(caller, row.user_id))) return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
+  return null;
+}
+
 export async function GET(req: NextRequest) {
   const db = admin();
-  const userId = req.nextUrl.searchParams.get("userId");
+  const auth = await requireElderAccess(req, req.nextUrl.searchParams.get("userId"));
+  if (!auth.ok) return auth.response;
+  const userId = auth.elderId;
   const table = req.nextUrl.searchParams.get("table");
-  if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 });
 
   if (table) {
     if (!isValidTable(table)) return NextResponse.json({ error: "invalid table" }, { status: 400 });
@@ -116,9 +129,10 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { table, ...fields } = body;
     if (!table || !isValidTable(table)) return NextResponse.json({ error: "invalid table" }, { status: 400 });
-    if (!fields.user_id) return NextResponse.json({ error: "user_id required" }, { status: 400 });
+    const auth = await requireElderAccess(req, fields.user_id);
+    if (!auth.ok) return auth.response;
     const clean = cleanFields(table, fields);
-    clean.user_id = fields.user_id;
+    clean.user_id = auth.elderId;
     const { data, error } = await insertWithRetry(db, table, clean);
     if (error) throw new Error(error.message || "insert failed");
     return NextResponse.json({ ok: true, data });
@@ -135,7 +149,10 @@ export async function PATCH(req: NextRequest) {
     const { table, id, ...fields } = body;
     if (!table || !isValidTable(table)) return NextResponse.json({ error: "invalid table" }, { status: 400 });
     if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+    const denied = await denyUnlessOwner(req, db, table, id);
+    if (denied) return denied;
     const clean = cleanFields(table, fields);
+    delete clean.user_id;
     const { error } = await updateWithRetry(db, table, id, clean);
     if (error) throw new Error(error.message || "update failed");
     return NextResponse.json({ ok: true });
@@ -152,6 +169,8 @@ export async function DELETE(req: NextRequest) {
     const { table, id } = body;
     if (!table || !isValidTable(table)) return NextResponse.json({ error: "invalid table" }, { status: 400 });
     if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+    const denied = await denyUnlessOwner(req, db, table, id);
+    if (denied) return denied;
     const { error } = await db.from(table).delete().eq("id", id);
     if (error) throw error;
     return NextResponse.json({ ok: true });

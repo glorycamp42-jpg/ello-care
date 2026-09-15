@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import MedicationAlarm from "@/components/MedicationAlarm";
 import CareMenu from "@/components/CareMenu";
+import ServiceWorker from "@/components/ServiceWorker";
 
 export const metadata: Metadata = {
   title: "Ello Care - 소연이와 함께",
@@ -38,6 +39,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-title" content="Ello Care" />
       </head>
       <body className="font-korean antialiased">
+        <ServiceWorker />
         <MedicationAlarm />
         <CareMenu />
         {children}
