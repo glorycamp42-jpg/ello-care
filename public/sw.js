@@ -1,6 +1,6 @@
 /* Ello Care service worker — installability + resilient static caching.
    Never caches /api or auth routes; pages are network-first with cache fallback. */
-const VERSION = "ello-v1";
+const VERSION = "ello-v3-20260915"; // bump on every deploy that changes pages: old caches are purged on activate
 const STATIC = ["/manifest.json", "/icons/icon-192.png", "/icons/icon-512.png",
   "/characters/grandchild.png", "/characters/friend.png", "/characters/church.png", "/characters/secretary.png"];
 
@@ -10,8 +10,16 @@ self.addEventListener("install", (e) => {
 });
 
 self.addEventListener("activate", (e) => {
-  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k)))));
-  self.clients.claim();
+  e.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k)));
+    // earlier versions cached HTML pages under the same name — drop any navigation responses that slipped in
+    const c = await caches.open(VERSION);
+    for (const req of await c.keys()) {
+      if (!/\.(png|svg|ico|woff2?|css|js|json)$/.test(new URL(req.url).pathname) && !new URL(req.url).pathname.startsWith("/_next/static/")) await c.delete(req);
+    }
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener("fetch", (e) => {
