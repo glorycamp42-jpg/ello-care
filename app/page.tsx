@@ -7,6 +7,7 @@ import SafetyPage, { findContactByKeyword, FamilyContact } from "@/components/Sa
 import HealthWalletPage from "@/components/HealthWalletPage";
 import MedicationPage, { loadMeds } from "@/components/MedicationPage";
 import SettingsPage from "@/components/SettingsPage";
+import InterpreterPage from "@/components/InterpreterPage";
 import { createClient } from "@/lib/supabase/client";
 import { startGPSTracking, stopGPSTracking } from "@/lib/gps-tracker";
 import { getSavedLang } from "@/lib/i18n";
@@ -39,16 +40,13 @@ interface Message {
 
 interface TodayItem { time: string; label: string; kind: "appointment" | "med" }
 
-/* ── Interpreter keyword detection (voice-only feature, kept) ── */
-const INTERPRET_TRIGGERS = /통역|interpret|영어로 (해줘|말해|얘기해|대화해|통역해)|스페니시|스페인어로|중국어로|일본어로|베트남어로/i;
-const INTERPRET_EXIT = /^(끝|그만|종료|done|stop|통역 끝|대화 끝)$/i;
-const LANG_SPEECH_CODES: Record<string, string> = { en: "en-US", es: "es-ES", zh: "zh-CN", ja: "ja-JP", vi: "vi-VN", ko: "ko-KR" };
-const LANG_LABELS: Record<string, string> = { en: "영어", es: "스페인어", zh: "중국어", ja: "일본어", vi: "베트남어", ko: "한국어" };
+/* "통역해줘" / "영어로 말해줘" by voice → opens the interpreter screen (no hidden mode) */
+const INTERPRET_TRIGGERS = /통역|영어로 (해줘|말해|얘기해|대화해)|스페인어로|중국어로|일본어로|베트남어로/i;
 function detectTargetLang(text: string): string {
-  if (/스페니시|스페인어|spanish|español/i.test(text)) return "es";
-  if (/중국어|chinese|중국말/i.test(text)) return "zh";
-  if (/일본어|japanese|일본말/i.test(text)) return "ja";
-  if (/베트남어|vietnamese|베트남말/i.test(text)) return "vi";
+  if (/스페인어|스페니시/.test(text)) return "es";
+  if (/중국어|중국말/.test(text)) return "zh";
+  if (/일본어|일본말/.test(text)) return "ja";
+  if (/베트남어|베트남말/.test(text)) return "vi";
   return "en";
 }
 
@@ -84,12 +82,7 @@ export default function Home() {
   const [showHealthWallet, setShowHealthWallet] = useState(false);
   const [showMedications, setShowMedications] = useState(false);
   const [showSafety, setShowSafety] = useState(false);
-
-  /* interpreter mode */
-  const [interpreterMode, setInterpreterMode] = useState(false);
-  const [interpreterLang, setInterpreterLang] = useState("en");
-  const [interpreterTurn, setInterpreterTurn] = useState<"user" | "other">("user");
-  const interpreterHistoryRef = useRef<{ speaker: string; original: string; translated: string }[]>([]);
+  const [showInterpreter, setShowInterpreter] = useState<string | null>(null); // target lang code when open
 
   /* refs */
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -103,8 +96,6 @@ export default function Home() {
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const SILENCE_MS = 2800;
   const FIRST_SPEECH_MS = 8000;
-  const interpreterSessionRef = useRef(0);
-  const interpreterRecRef = useRef<SpeechRecognition | null>(null);
 
   /* ── boot: auth, font scale, contacts, location ── */
   useEffect(() => {
@@ -261,21 +252,6 @@ export default function Home() {
       setIsSpeaking(false);
     }
   }
-  function playTTSAndWait(text: string, voiceLang: string): Promise<void> {
-    return new Promise((resolve) => {
-      stopCurrentAudio();
-      fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, voiceId: ELLO.voiceId, languageCode: voiceLang }) })
-        .then(r => r.ok ? r.blob() : Promise.reject())
-        .then(blob => {
-          const url = URL.createObjectURL(blob); const audio = new Audio(url); audioRef.current = audio;
-          audio.onplay = () => setIsSpeaking(true);
-          audio.onended = () => { setIsSpeaking(false); URL.revokeObjectURL(url); resolve(); };
-          audio.onerror = () => { setIsSpeaking(false); URL.revokeObjectURL(url); resolve(); };
-          audio.play().catch(() => { audioRef.current = null; setIsSpeaking(false); URL.revokeObjectURL(url); resolve(); });
-        })
-        .catch(() => resolve());
-    });
-  }
   function onBubbleTap() {
     if (isSpeaking || audioRef.current) stopCurrentAudio();
     else if (lastAssistantText) playTTS(lastAssistantText);
@@ -287,13 +263,8 @@ export default function Home() {
     if (!text || isLoading) return;
     setLiveTranscript("");
 
-    if (interpreterMode) { interpreterSend(text, interpreterTurn); return; }
     if (INTERPRET_TRIGGERS.test(text)) {
-      const tLang = detectTargetLang(text);
-      setInterpreterMode(true); setInterpreterLang(tLang); setInterpreterTurn("user"); interpreterHistoryRef.current = [];
-      const msg = `통역을 시작할게요. 말씀하시면 제가 ${LANG_LABELS[tLang]}로 바꿔서 말하고, 상대방 말은 한국어로 알려드릴게요. 끝나면 끝이라고 하세요.`;
-      setMessages([...messagesRef.current, { role: "user", content: text }, { role: "assistant", content: msg }]);
-      setLastAssistantText(msg); setInput(""); playTTS(msg);
+      setInput(""); setShowInterpreter(detectTargetLang(text));
       return;
     }
 
@@ -323,70 +294,6 @@ export default function Home() {
       const reply = "연결에 문제가 있어요. 잠시 후 다시 말씀해 주세요.";
       setMessages([...newMsgs, { role: "assistant", content: reply }]); setLastAssistantText(reply);
     } finally { setIsLoading(false); }
-  }
-
-  /* ── interpreter (voice loop) ── */
-  function endInterpreter(msg?: string) {
-    interpreterSessionRef.current += 1; // invalidates any in-flight loop
-    try { interpreterRecRef.current?.stop(); } catch {}
-    interpreterRecRef.current = null;
-    stopCurrentAudio();
-    setIsListening(false); setIsLoading(false);
-    setInterpreterMode(false); setInterpreterTurn("user"); interpreterHistoryRef.current = [];
-    if (msg) { setMessages([...messagesRef.current, { role: "assistant", content: msg }]); setLastAssistantText(msg); playTTS(msg); }
-  }
-  function listenInLanguage(langCode: string): Promise<string> {
-    return new Promise((resolve) => {
-      const SR = typeof window !== "undefined" ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
-      if (!SR) { resolve(""); return; }
-      const r = new SR(); r.lang = LANG_SPEECH_CODES[langCode] || "en-US"; r.continuous = true; r.interimResults = true;
-      interpreterRecRef.current = r;
-      let acc = ""; let timer: ReturnType<typeof setTimeout> | null = null;
-      const finish = () => { if (timer) clearTimeout(timer); try { r.stop(); } catch {} if (interpreterRecRef.current === r) interpreterRecRef.current = null; setIsListening(false); resolve(acc.trim()); };
-      const reset = () => { if (timer) clearTimeout(timer); timer = setTimeout(finish, 3000); };
-      r.onresult = (ev: SpeechRecognitionResultEvent) => {
-        let finalText = "";
-        for (let i = 0; i < ev.results.length; i++) if (ev.results[i].isFinal) { const t = ev.results[i][0].transcript.trim(); if (t && !finalText.includes(t)) finalText = t.includes(finalText) ? t : `${finalText} ${t}`.trim(); }
-        if (finalText) acc = finalText; setLiveTranscript(acc); reset();
-      };
-      r.onerror = finish; r.onend = finish; r.start(); setIsListening(true); reset();
-    });
-  }
-  async function interpreterSend(text: string, speaker: "user" | "other") {
-    if (!text.trim()) return;
-    const session = interpreterSessionRef.current;
-    const alive = () => interpreterSessionRef.current === session;
-    const exit = (msg: string) => endInterpreter(msg);
-    if (INTERPRET_EXIT.test(text.trim())) { exit("통역을 마쳤어요."); return; }
-    const userMsg: Message = { role: "user", content: text };
-    setMessages([...messagesRef.current, userMsg]); setInput(""); setIsLoading(true);
-    try {
-      const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ interpreterMode: true, messages: [{ role: "user", content: text }], targetLang: interpreterLang, speakerRole: speaker, history: interpreterHistoryRef.current }) });
-      const data = await res.json();
-      if (!alive()) return;
-      setIsLoading(false);
-      if (data.exit) { exit(data.forUser || "통역을 마쳤어요."); return; }
-      if (speaker === "user" && data.forOther) {
-        interpreterHistoryRef.current.push({ speaker: "user", original: text, translated: data.forOther });
-        const shown = `[${LANG_LABELS[interpreterLang]}] ${data.forOther}`;
-        setMessages([...messagesRef.current, userMsg, { role: "assistant", content: shown }]); setLastAssistantText(shown);
-        await playTTSAndWait(data.forOther, LANG_SPEECH_CODES[interpreterLang]);
-        if (!alive()) return;
-        setInterpreterTurn("other");
-        const other = await listenInLanguage(interpreterLang);
-        if (!alive()) return;
-        if (other) await interpreterSend(other, "other");
-      } else if (speaker === "other" && data.forUser) {
-        interpreterHistoryRef.current.push({ speaker: "other", original: text, translated: data.forUser });
-        setMessages([...messagesRef.current, userMsg, { role: "assistant", content: data.forUser }]); setLastAssistantText(data.forUser);
-        await playTTSAndWait(data.forUser, "ko-KR");
-        if (!alive()) return;
-        setInterpreterTurn("user");
-        const mine = await listenInLanguage("ko");
-        if (!alive()) return;
-        if (mine) await interpreterSend(mine, "user");
-      }
-    } catch { setIsLoading(false); }
   }
 
   /* ── photo → chat (documents, letters, suspicious texts) ── */
@@ -446,7 +353,6 @@ export default function Home() {
     else setLiveTranscript("");
   }
   function toggleListening() {
-    if (interpreterMode) { endInterpreter("통역을 마쳤어요."); return; } // the mic doubles as the interpreter's off switch
     if (isListening) { finishListening(true); return; }
     stopCurrentAudio();
     const r = createRecognition();
@@ -496,6 +402,7 @@ export default function Home() {
   if (showHealthWallet) return <HealthWalletPage onClose={closeAll} userId={userId} langCode="ko" />;
   if (showMedications) return <MedicationPage onClose={closeAll} langCode="ko" />;
   if (showSafety) return <SafetyPage onClose={closeAll} langCode="ko" />;
+  if (showInterpreter) return <InterpreterPage onClose={() => setShowInterpreter(null)} initialLang={showInterpreter} />;
   if (showSettings) return (
     <SettingsPage userName={userName} onClose={closeAll}
       onOpenReminders={() => setShowReminders(true)} onOpenHealthWallet={() => setShowHealthWallet(true)}
@@ -533,12 +440,6 @@ export default function Home() {
       {/* middle: words + today. Scrolls only if the screen is short or the font is enlarged; controls stay pinned. */}
       <div className="flex-1 min-h-0 overflow-y-auto">
       <div className="px-5 pt-2">
-        {interpreterMode && (
-          <div className="mb-2 flex items-center justify-between rounded-2xl bg-[#1F7A47] text-white px-4 py-2 text-[17px] font-bold">
-            <span className="text-[20px]">통역 중 ({LANG_LABELS[interpreterLang]}) — {interpreterTurn === "user" ? "말씀하세요" : "상대방 차례"}</span>
-            <button onClick={() => endInterpreter("통역을 마쳤어요.")} className="bg-white/20 rounded-xl px-5 h-12 text-[20px]">끝</button>
-          </div>
-        )}
         {showingTranscript ? (
           <div className="bg-[#FFE6D9] rounded-[22px] rounded-br-md px-[18px] py-3.5 border-2 border-[#EADFD3] min-h-[64px] max-h-[170px] overflow-y-auto text-[24px] leading-[1.4] font-medium text-[#2B211C]">
             {liveTranscript || <span className="text-[#C2410C]">말씀하세요…</span>}
@@ -602,6 +503,14 @@ export default function Home() {
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2B211C" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
           </button>
           <span className="text-[18px] font-bold text-[#2B211C]">사진</span>
+        </div>
+
+        <div className="absolute right-5 bottom-1 flex flex-col items-center gap-1">
+          <button onClick={() => { stopCurrentAudio(); setShowInterpreter("en"); }} disabled={isLoading || isListening} aria-label="통역"
+            className="w-16 h-16 rounded-full bg-white border-2 border-[#D9CCC0] flex items-center justify-center active:scale-95 disabled:opacity-50">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2B211C" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 8l6 6" /><path d="M4 14l6-6 2-3" /><path d="M2 5h12" /><path d="M7 2h1" /><path d="M22 22l-5-10-5 10" /><path d="M14 18h6" /></svg>
+          </button>
+          <span className="text-[18px] font-bold text-[#2B211C]">통역</span>
         </div>
       </div>
 
