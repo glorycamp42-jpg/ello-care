@@ -273,7 +273,17 @@ const TOOLS = [
   },
   {
     name: "take_photo",
-    description: "Ask the phone to open the camera so the user can show a document, letter, medicine bottle or a suspicious text message. Use when they want to show you something or check a scam.",
+    description: "Ask the phone to open the camera so the user can show a document, prescription, medicine bottle, insurance card or an old photo. For text messages, emails, letters or notices use read_incoming_text instead.",
+    input_schema: { type: "object" as const, properties: {}, required: [] },
+  },
+  {
+    name: "compose_text",
+    description: "Write an English (or other language) text message / SMS for the user and open the phone's messaging app with it filled in. Use when they ask to send/text/message someone in English, reply to a message, or say 문자 보내줘 / 답장해줘. Pass what they want to say in their own words.",
+    input_schema: { type: "object" as const, properties: { to: { type: "string", description: "Recipient as they said it: 딸, 학교 선생님, a name, or a phone number" }, message_intent: { type: "string", description: "What they want to say, in their words (Korean is fine)" } }, required: ["message_intent"] },
+  },
+  {
+    name: "read_incoming_text",
+    description: "Open the screen where the user pastes or photographs a text message, email, letter, bill or notice they received, so it is explained in their language. Use IMMEDIATELY when they mention receiving a message/letter/mail/notice/bill (문자 왔어, 편지 왔어, 이거 뭐야) — do NOT ask what it says first.",
     input_schema: { type: "object" as const, properties: {}, required: [] },
   },
   {
@@ -284,7 +294,7 @@ const TOOLS = [
 ];
 
 /* Tools whose effect happens on the phone: the server just records a client action for the app to run. */
-const CLIENT_TOOLS = new Set(["open_interpreter", "call_family", "add_family_contact", "add_medication_reminder", "remove_medication_reminder", "set_font_size", "open_screen", "take_photo", "repeat_last"]);
+const CLIENT_TOOLS = new Set(["open_interpreter", "call_family", "add_family_contact", "add_medication_reminder", "remove_medication_reminder", "set_font_size", "open_screen", "take_photo", "repeat_last", "compose_text", "read_incoming_text"]);
 
 /* ── Tool Execution Functions ── */
 
@@ -1268,7 +1278,9 @@ YOU OPERATE THE APP. The user should never need to find a button — when they a
 - "병원 취소" → cancel_appointment (ask which one if several)
 - 글씨 크게/작게 → set_font_size
 - 일정 보여줘 / 건강수첩 / 약 목록 / 연락처 / 설정 → open_screen
-- 사진 봐줘 / 문자 사기인지 / 처방전 읽어줘 → take_photo
+- 문자 보내줘 / 영어로 답장해줘 / "딸 학교에 내일 못 간다고 해줘" → compose_text (you write the English; the phone opens the messaging app pre-filled — the user only taps send)
+- 문자 왔어 / 편지 왔어 / 메일 왔어 / 고지서 / "이거 뭐라는 거야" → read_incoming_text IMMEDIATELY. NEVER ask "무슨 내용이에요?" — they cannot read it, that is why they are asking. Say only: "문자 화면을 열게요. 붙여넣거나 사진 찍어주세요."
+- 사진 봐줘 / 처방전 읽어줘 / 이 약 뭐야 → take_photo
 - 다시 말해줘 / 못 들었어 → repeat_last
 - 뭐 할 수 있어? → explain, in 2 sentences, that you keep their schedule and medicines, call family, interpret, read photos, and remember what they tell you.
 - "약 언제 먹지?" → answer from the medication reminders above and the health context; never invent.

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createMiddlewareSupabase } from "@/lib/supabase/middleware";
 
-const PUBLIC = ["/login", "/family/login", "/auth/callback", "/api/", "/_next/", "/favicon.ico", "/sw.js", "/manifest", "/icon", "/icons/", "/characters/", "/animations/", "/admin"];
+const PUBLIC = ["/login", "/family/login", "/auth/callback", "/api/", "/_next/", "/favicon.ico", "/sw.js", "/share", "/manifest", "/icon", "/icons/", "/characters/", "/animations/", "/admin"];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

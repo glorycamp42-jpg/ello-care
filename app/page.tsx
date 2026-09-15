@@ -8,6 +8,7 @@ import HealthWalletPage from "@/components/HealthWalletPage";
 import MedicationPage, { loadMeds, saveMeds } from "@/components/MedicationPage";
 import SettingsPage from "@/components/SettingsPage";
 import InterpreterPage from "@/components/InterpreterPage";
+import MessagesPage from "@/components/MessagesPage";
 import { createClient } from "@/lib/supabase/client";
 import { startGPSTracking, stopGPSTracking } from "@/lib/gps-tracker";
 import { getSavedLang } from "@/lib/i18n";
@@ -97,6 +98,7 @@ export default function Home() {
   const [showMedications, setShowMedications] = useState(false);
   const [showSafety, setShowSafety] = useState(false);
   const [showInterpreter, setShowInterpreter] = useState<string | null>(null); // target lang code when open
+  const [showMessages, setShowMessages] = useState<{ tab: "read" | "write"; intent?: string; to?: string; incoming?: string } | null>(null);
 
   /* refs */
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -172,6 +174,15 @@ export default function Home() {
       } catch {}
     }, () => {}, { enableHighAccuracy: false, timeout: 10000 });
   }
+
+  /* ── text shared from another app (Android share sheet) → 문자 screen ── */
+  useEffect(() => {
+    if (userId === "default") return;
+    try {
+      const shared = sessionStorage.getItem("ello-share-text");
+      if (shared) { sessionStorage.removeItem("ello-share-text"); setShowMessages({ tab: "read", incoming: shared }); }
+    } catch {}
+  }, [userId]);
 
   /* ── GPS sharing for the family app ── */
   useEffect(() => {
@@ -394,6 +405,12 @@ export default function Home() {
         setPhotoHint(true); setTimeout(() => setPhotoHint(false), 8000);
         try { fileInputRef.current?.click(); } catch {} // may be blocked without a gesture → the pulsing 사진 button is the fallback
         break;
+      case "compose_text":
+        setTimeout(() => { stopCurrentAudio(); setShowMessages({ tab: "write", intent: String(a.message_intent || ""), to: String(a.to || "") }); }, 1500);
+        break;
+      case "read_incoming_text":
+        setTimeout(() => { stopCurrentAudio(); setShowMessages({ tab: "read" }); }, 1500);
+        break;
       case "repeat_last":
         break; // handled inline in sendMessage
     }
@@ -507,6 +524,7 @@ export default function Home() {
   if (showMedications) return <MedicationPage onClose={closeAll} langCode="ko" />;
   if (showSafety) return <SafetyPage onClose={closeAll} langCode="ko" />;
   if (showInterpreter) return <InterpreterPage onClose={() => setShowInterpreter(null)} initialLang={showInterpreter} />;
+  if (showMessages) return <MessagesPage onClose={() => { setShowMessages(null); setContacts(loadContacts()); }} contacts={contacts} initialTab={showMessages.tab} initialIntent={showMessages.intent} initialTo={showMessages.to} initialIncoming={showMessages.incoming} />;
   if (showSettings) return (
     <SettingsPage userName={userName} onClose={closeAll}
       onOpenReminders={() => setShowReminders(true)} onOpenHealthWallet={() => setShowHealthWallet(true)}
@@ -602,11 +620,13 @@ export default function Home() {
 
         <div className="absolute left-5 bottom-1 flex flex-col items-center gap-1">
           <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleImageUpload} className="hidden" />
-          <button onClick={() => { setPhotoHint(false); fileInputRef.current?.click(); }} disabled={isLoading || isListening} aria-label="사진"
+          <button onClick={() => { if (photoHint) { setPhotoHint(false); fileInputRef.current?.click(); return; } stopCurrentAudio(); setShowMessages({ tab: "read" }); }} disabled={isLoading || isListening} aria-label="문자"
             className={`w-16 h-16 rounded-full flex items-center justify-center active:scale-95 disabled:opacity-50 ${photoHint ? "bg-[#FFE6D9] border-[3px] border-[#FF6B35] animate-pulse" : "bg-white border-2 border-[#D9CCC0]"}`}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2B211C" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
+            {photoHint
+              ? <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#C2410C" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
+              : <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2B211C" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" /></svg>}
           </button>
-          <span className="text-[18px] font-bold text-[#2B211C]">사진</span>
+          <span className="text-[18px] font-bold text-[#2B211C]">{photoHint ? "사진" : "문자"}</span>
         </div>
 
         <div className="absolute right-5 bottom-1 flex flex-col items-center gap-1">
