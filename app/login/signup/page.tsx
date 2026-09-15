@@ -36,7 +36,7 @@ export default function ElderSignup() {
             <span className="text-white text-3xl font-bold">E</span>
           </div>
           <h1 className="text-2xl font-bold text-gray-900">회원가입</h1>
-          <p className="text-gray-500 text-base mt-1">소연이와 함께 시작해요</p>
+          <p className="text-gray-500 text-base mt-1">엘로와 함께 시작해요</p>
         </div>
 
         <form onSubmit={handleSignup} className="space-y-4">

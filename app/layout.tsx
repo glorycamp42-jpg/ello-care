@@ -1,12 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import MedicationAlarm from "@/components/MedicationAlarm";
-import CareMenu from "@/components/CareMenu";
 import ServiceWorker from "@/components/ServiceWorker";
 
 export const metadata: Metadata = {
-  title: "Ello Care - 소연이와 함께",
-  description: "한국계 미국인 어르신을 위한 AI 말벗 서비스",
+  title: "Ello Care - 엘로와 함께",
+  description: "어르신의 하루를 챙기는 AI 비서 엘로",
 };
 
 export default function RootLayout({
@@ -41,7 +40,6 @@ export default function RootLayout({
       <body className="font-korean antialiased">
         <ServiceWorker />
         <MedicationAlarm />
-        <CareMenu />
         {children}
       </body>
     </html>

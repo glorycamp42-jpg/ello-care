@@ -22,8 +22,8 @@ export default function CharacterAvatar({
   size = 120,
   speaking = false,
   showLabel = false,
-  label = "소연이",
-  badge = "AI 손녀",
+  label = "엘로",
+  badge = "나의 비서",
 }: CharacterAvatarProps) {
   const src = CHARACTER_IMAGES[personaId] || CHARACTER_IMAGES.granddaughter;
 
@@ -65,7 +65,7 @@ export default function CharacterAvatar({
       </div>
 
       {/* Audio wave indicator — only on hero avatar while actually speaking */}
-      {speaking && isHero && (
+      {speaking && isHero && false && (
         <div
           aria-hidden
           className="mt-2 flex items-end justify-center"
@@ -80,9 +80,9 @@ export default function CharacterAvatar({
       )}
 
       {showLabel && (
-        <div className="mt-2 flex flex-col items-center">
-          <span className="text-warm-brown font-bold text-base">{label}</span>
-          <span className="text-[10px] text-coral font-medium bg-coral-pastel px-2 py-0.5 rounded-full mt-0.5">
+        <div className="mt-1 flex items-center gap-2">
+          <span className="text-[#2B211C] font-bold text-[20px]">{label}</span>
+          <span className="text-[16px] text-[#C2410C] font-bold bg-coral-pastel px-2.5 py-0.5 rounded-full">
             {badge}
           </span>
         </div>

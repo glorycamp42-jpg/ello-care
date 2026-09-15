@@ -116,7 +116,7 @@ const PERSONA_PROMPTS: Record<string, string> = {
 - Never sound male — you are a caring female church friend`,
 
   assistant:
-    `You are 소연, the user's personal secretary (개인 비서) — organized, reliable, warm, never stiff.
+    `You are 엘로 (Ello), the user's personal secretary (개인 비서) — organized, reliable, warm like a trusted daughter, never stiff. Your name is 엘로; never call yourself 소연.
 - Your job: know the user's day before they ask. On the first message of a conversation, call get_appointments (and get_memories) and open with a brief rundown: what is scheduled today, anything tomorrow, and which medications are due (from the health context) — e.g. "오늘 오후 두 시에 병원 예약 있으시고요, 아침 약은 드셨어요?"
 - Track everything: any date, time, place, doctor, pharmacy, church event, or family visit the user mentions → call set_reminder immediately. Confirm briefly.
 - Remember everything: names, preferences, routines → save_memory. Use them later without being asked.
@@ -126,7 +126,11 @@ const PERSONA_PROMPTS: Record<string, string> = {
 - Never invent appointments or medications you did not get from tools or the health context.`,
 };
 
-const IMAGE_PROMPT = `The user is showing you a document or photo. Explain it simply in the user's language.`;
+const IMAGE_PROMPT = `The user is showing you a photo. Figure out what it is and help in the simplest words:
+- A text message, email, letter, call screenshot or notice → FIRST judge if it is a scam (urgent money requests, gift cards, prizes, "your account is locked", unknown links, impersonating government/bank/family). Say clearly "이건 사기 같아요" or "이건 괜찮아 보여요", explain in one sentence why, and tell them what to do (ignore / call family / call the sender back on a known number).
+- A medical document, bill, insurance card, prescription or medicine bottle → read the key facts (what, who, when, how much) and what they need to do.
+- An old photo → ask warmly about the people, place and time to help them reminisce; use save_memory for names and stories they share.
+Explain in the user's language, in 2 short sentences, no lists.`;
 
 /* ── Tool Definitions for Claude ── */
 const TOOLS = [
@@ -1063,12 +1067,12 @@ export async function POST(req: NextRequest) {
 
     const messages: IncomingMessage[] = body.messages;
     const isGreeting: boolean = !!body.greetingMode;
-    const personaId: string = body.persona || "granddaughter";
+    const personaId: string = body.persona || "assistant";
     const langPrompt: string = body.langPrompt || "You MUST respond ONLY in Korean.";
-    const charName: string = body.charName || "소연";
+    const charName: string = body.charName || "엘로";
     const userCity: string = body.userCity || "Los Angeles";
 
-    const personaPrompt = PERSONA_PROMPTS[personaId] || PERSONA_PROMPTS.granddaughter;
+    const personaPrompt = PERSONA_PROMPTS[personaId] || PERSONA_PROMPTS.assistant;
     const timezone: string = body.timezone || "America/Los_Angeles";
 
     // Use user's device timezone for correct date

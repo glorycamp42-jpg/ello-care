@@ -113,7 +113,7 @@ export default function AppointmentDetail() {
           </span>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: "#3D3530", margin: "0 0 4px" }}>{appt.title}</h1>
           {appt.source === "ello_ai" && (
-            <span style={{ fontSize: 11, color: "#A89B94" }}>소연이가 자동 저장</span>
+            <span style={{ fontSize: 11, color: "#A89B94" }}>엘로가 자동 저장</span>
           )}
         </div>
 

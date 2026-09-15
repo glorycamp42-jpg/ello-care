@@ -1,7 +1,7 @@
 {
   "name": "Ello Care",
   "short_name": "Ello",
-  "description": "AI 손녀 소연이와 함께하는 케어 앱",
+  "description": "어르신의 하루를 챙기는 AI 비서 엘로",
   "id": "/",
   "start_url": "/",
   "scope": "/",

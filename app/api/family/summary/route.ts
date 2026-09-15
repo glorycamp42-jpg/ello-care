@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
   const activity: Activity[] = [];
   const rows = (convos.data || []) as { role: string; content: string; created_at: string }[];
   const lastUserMsg = rows.find((r) => r.role === "user");
-  if (lastUserMsg) activity.push({ icon: "💬", text: "소연이와 대화함", at: lastUserMsg.created_at });
+  if (lastUserMsg) activity.push({ icon: "💬", text: "엘로와 대화함", at: lastUserMsg.created_at });
   const lastSos = rows.find((r) => r.role === "assistant" && r.content.startsWith("[SOS"));
   if (lastSos) activity.push({ icon: "🆘", text: lastSos.content.replace(/^\[SOS [a-z]+\]\s*/, "긴급 알림: "), at: lastSos.created_at });
   if (loc.data) activity.push({ icon: "📍", text: "위치 업데이트됨", at: loc.data.recorded_at });

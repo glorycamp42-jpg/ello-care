@@ -1,26 +1,16 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import CharacterAvatar from "@/components/CharacterAvatar";
-import VoiceButton from "@/components/VoiceButton";
-import ImageButton from "@/components/ImageButton";
-import SpeakerButton from "@/components/SpeakerButton";
-import CharacterSelect, { PERSONAS, Persona, getPersonaText } from "@/components/CharacterSelect";
-import { createClient } from "@/lib/supabase/client";
-import { useTickets } from "@/components/useTickets";
-import { startGPSTracking, stopGPSTracking } from "@/lib/gps-tracker";
-import TicketToast from "@/components/TicketToast";
-import HappinessGarden from "@/components/HappinessGarden";
 import RemindersPage from "@/components/RemindersPage";
-import BiblePage from "@/components/BiblePage";
-import PlaygroundPage from "@/components/PlaygroundPage";
-import SafetyPage from "@/components/SafetyPage";
+import SafetyPage, { findContactByKeyword, FamilyContact } from "@/components/SafetyPage";
 import HealthWalletPage from "@/components/HealthWalletPage";
-import MedicationPage from "@/components/MedicationPage";
-import { findContactByKeyword } from "@/components/SafetyPage";
-import LanguageSelect from "@/components/LanguageSelect";
-import { Language, getSavedLang } from "@/lib/i18n";
-import { parseMemories } from "@/lib/parseMemory";
+import MedicationPage, { loadMeds } from "@/components/MedicationPage";
+import SettingsPage from "@/components/SettingsPage";
+import { createClient } from "@/lib/supabase/client";
+import { startGPSTracking, stopGPSTracking } from "@/lib/gps-tracker";
+import { getSavedLang } from "@/lib/i18n";
+import { ELLO, ELLO_GREETING, FONT_STEPS, applyFontScale, loadFontIdx } from "@/lib/ello";
 
 /* ── Web Speech API types ── */
 declare global {
@@ -47,518 +37,13 @@ interface Message {
   image?: { base64: string; mediaType: string; dataUrl: string };
 }
 
-function getSavedPersona(): Persona | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const id = localStorage.getItem("ello-persona");
-    return PERSONAS.find((p) => p.id === id) || null;
-  } catch { return null; }
-}
-function savePersona(p: Persona) {
-  try { localStorage.setItem("ello-persona", p.id); } catch {}
-}
+interface TodayItem { time: string; label: string; kind: "appointment" | "med" }
 
-export default function Home() {
-  const [lang, setLang] = useState<Language | null>(null);
-  const [showLangSelect, setShowLangSelect] = useState(true);
-  const [persona, setPersona] = useState<Persona | null>(null);
-  const [showSelect, setShowSelect] = useState(true);
-  const [showTicketPage, setShowTicketPage] = useState(false);
-  const [showReminders, setShowReminders] = useState(false);
-  const [showBible, setShowBible] = useState(false);
-  const [showPlayground, setShowPlayground] = useState(false);
-  const [showSafety, setShowSafety] = useState(false);
-  const [showHealthWallet, setShowHealthWallet] = useState(false);
-  const [showMedications, setShowMedications] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [lastAssistantText, setLastAssistantText] = useState("");
-  const [checkedIn, setCheckedIn] = useState(false);
-  const [appointmentToast, setAppointmentToast] = useState(false);
-  const [userId, setUserId] = useState("default");
-
-  const chatEndRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const ttsAbortRef = useRef<AbortController | null>(null);
-  const messagesRef = useRef(messages);
-  messagesRef.current = messages;
-
-  const [userCity, setUserCity] = useState("Los Angeles");
-
-  const tickets = useTickets();
-
-  useEffect(() => {
-    // Load saved language
-    const savedLang = getSavedLang();
-    const hasLang = typeof window !== "undefined" && localStorage.getItem("ello-language");
-    if (hasLang) {
-      setLang(savedLang);
-      setShowLangSelect(false);
-    }
-    // Load saved persona
-    const saved = getSavedPersona();
-    if (saved) { setPersona(saved); setShowSelect(false); }
-
-    // Get current user ID for appointment saving
-    try {
-      const sb = createClient();
-      const tryGetUser = async (attempt = 1): Promise<void> => {
-        console.log(`[auth] Attempt ${attempt} to get user...`);
-        const { data: { session } } = await sb.auth.getSession();
-        if (session?.user?.id) {
-          setUserId(session.user.id);
-          console.log("[auth] User ID from getSession:", session.user.id, "email:", session.user.email);
-          return;
-        }
-        const { data: { user } } = await sb.auth.getUser();
-        if (user?.id) {
-          setUserId(user.id);
-          console.log("[auth] User ID from getUser:", user.id);
-          return;
-        }
-        // 재시도 (PIN 로그인 후 세션 설정 지연 대비)
-        if (attempt < 3) {
-          await new Promise(r => setTimeout(r, 1000));
-          return tryGetUser(attempt + 1);
-        }
-        // 최후의 fallback: localStorage에서 userId 복구
-        const savedId = localStorage.getItem('ello-userId');
-        if (savedId) {
-          setUserId(savedId);
-          console.log("[auth] Recovered userId from localStorage:", savedId);
-          return;
-        }
-        console.log("[auth] No session after retries, redirecting to /login");
-        window.location.href = "/login";
-      };
-      tryGetUser();
-    } catch (err) {
-      console.error("[auth] Failed to get user:", err);
-    }
-
-    // Load saved location or request geolocation
-    try {
-      const savedLoc = localStorage.getItem("ello-user-location");
-      if (savedLoc) {
-        const loc = JSON.parse(savedLoc);
-        if (loc.city) setUserCity(loc.city);
-        console.log(`[geo] Loaded saved location: ${loc.city}`);
-      } else {
-        requestGeolocation();
-      }
-    } catch { requestGeolocation(); }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  function requestGeolocation() {
-    if (typeof navigator === "undefined" || !navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const { latitude, longitude } = pos.coords;
-        console.log(`[geo] Got coordinates: ${latitude}, ${longitude}`);
-        try {
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`,
-            { headers: { "User-Agent": "ElloCare/1.0" } }
-          );
-          if (res.ok) {
-            const data = await res.json();
-            const city = data.address?.city || data.address?.town || data.address?.county || "Los Angeles";
-            const loc = { lat: latitude, lon: longitude, city };
-            localStorage.setItem("ello-user-location", JSON.stringify(loc));
-            setUserCity(city);
-            console.log(`[geo] Resolved city: ${city}`);
-          }
-        } catch (err) {
-          console.error("[geo] Reverse geocoding failed:", err);
-        }
-      },
-      (err) => console.log(`[geo] Permission denied or error: ${err.message}`),
-      { enableHighAccuracy: false, timeout: 10000 }
-    );
-  }
-
-  async function generateSmartGreeting(currentLang: Language): Promise<string> {
-    const defaultGreeting = currentLang.greeting;
-    if (userId === "default") return defaultGreeting;
-
-    try {
-      // Fetch memories from API
-      const res = await fetch(`/api/appointments?userId=${userId}`);
-      const memRes = await fetch(`/api/memories`);
-      const memData = await memRes.json();
-      const apptData = await res.json();
-
-      const memories = memData.memories || [];
-      const appointments = apptData.appointments || [];
-
-      if (memories.length === 0 && appointments.length === 0) return defaultGreeting;
-
-      // Claude will use memories/appointments from DB via system prompt
-      // Ask Claude for a warm personalized greeting
-      const greetRes = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: [{ role: "user", content: "안녕" }],
-          persona: persona?.id || "granddaughter",
-          langPrompt: currentLang.systemPrompt,
-          charName: currentLang.charName,
-          userId,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          greetingMode: true,
-        }),
-      });
-      const greetData = await greetRes.json();
-      if (greetData.text && !greetData.error) {
-        // Filter out any raw system prompt text that might leak through
-        const filtered = greetData.text
-          .replace(/\[SYSTEM\][\s\S]*$/, "")
-          .replace(/Memories:[\s\S]*$/, "")
-          .replace(/Keep it to \d+-\d+ sentences[\s\S]*$/, "")
-          .replace(/Be warm and caring\.?/gi, "")
-          .replace(/\bcaring\.?\s*/gi, "")
-          .replace(/\bwarm\.?\s*/gi, "")
-          .replace(/ABSOLUTE RULE[\s\S]*$/, "")
-          .replace(/CRITICAL[\s\S]*$/, "")
-          .replace(/You are a[\s\S]*companion[\s\S]*$/, "")
-          .replace(/Conversation style:[\s\S]*$/, "")
-          .trim();
-        if (filtered.length > 5 && !/^[a-zA-Z.\s]{1,20}$/.test(filtered)) {
-          console.log("[greeting] Smart greeting generated:", filtered.slice(0, 50));
-          return filtered;
-        }
-      }
-    } catch (err) {
-      console.error("[greeting] Failed, using default:", err);
-    }
-    return defaultGreeting;
-  }
-
-  // 대화 복구는 단 한 번만 실행되도록 ref로 추적
-  const restoredRef = useRef(false);
-
-  useEffect(() => {
-    // userId 가 default 면 PIN 로그인 대기 중 — 아직 복구 시도 안 함
-    if (!persona || showSelect || showLangSelect) return;
-    if (userId === "default") return;
-    if (restoredRef.current) return;
-    restoredRef.current = true;
-
-    const currentLang = lang || getSavedLang();
-    console.log(`[chat] Attempting to restore conversation for userId=${userId}`);
-
-    fetch(`/api/conversations?userId=${userId}`)
-      .then((r) => r.json())
-      .then((data) => {
-        const restored = (data.messages || []).map((m: { role: string; content: string }) => ({
-          role: m.role as "user" | "assistant",
-          content: m.content,
-        }));
-
-        if (restored.length > 0) {
-          console.log(`[chat] Restored ${restored.length} messages from last 24h`);
-          setMessages(restored);
-          setLastAssistantText(restored[restored.length - 1]?.content || "");
-        } else {
-          console.log("[chat] No previous conversation, generating smart greeting");
-          generateSmartGreeting(currentLang).then((greetingText) => {
-            setMessages([{ role: "assistant", content: greetingText }]);
-            setLastAssistantText(greetingText);
-          });
-        }
-      })
-      .catch((err) => {
-        console.error("[chat] Restore failed, using default greeting:", err);
-        setMessages([{ role: "assistant", content: currentLang.greeting }]);
-        setLastAssistantText(currentLang.greeting);
-      });
-
-    checkMorningReminders();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [persona, showSelect, showLangSelect, userId]);
-
-  async function checkMorningReminders() {
-    try {
-      const res = await fetch("/api/memories");
-      const data = await res.json();
-      const memories = data.memories || [];
-      if (memories.length === 0) return;
-
-      const today = new Date();
-      const todayStr = `${today.getMonth() + 1}월${today.getDate()}일`;
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const tomorrowStr = `${tomorrow.getMonth() + 1}월${tomorrow.getDate()}일`;
-
-      const urgent = memories.filter((m: { date: string }) =>
-        m.date.includes(todayStr) || m.date.includes("오늘") ||
-        m.date.includes(tomorrowStr) || m.date.includes("내일")
-      );
-
-      if (urgent.length > 0) {
-        const m = urgent[0];
-        const when = m.date.includes("오늘") || m.date.includes(todayStr) ? "오늘" : "내일";
-        const reminder = `할머니, ${when} ${m.time ? m.time + "에 " : ""}${m.content} 있어요!`;
-        setTimeout(() => {
-          setMessages((prev) => [...prev, { role: "assistant", content: reminder }]);
-          setLastAssistantText(reminder);
-        }, 2000);
-      }
-    } catch {
-      // Silently fail if Supabase not configured
-    }
-  }
-
-  // Start background GPS sharing once we know who the user is (family app reads it)
-  useEffect(() => {
-    if (userId === "default") return;
-    startGPSTracking(userId);
-    return () => stopGPSTracking();
-  }, [userId]);
-
-  // CareMenu (layout-level) asks the page to open full-screen sub pages via events
-  useEffect(() => {
-    const closeAll = () => {
-      setShowBible(false); setShowSafety(false); setShowTicketPage(false); setShowReminders(false);
-      setShowPlayground(false); setShowHealthWallet(false); setShowMedications(false);
-    };
-    const openSafety = () => { closeAll(); setShowSafety(true); };
-    const openBible = () => { closeAll(); setShowBible(true); };
-    window.addEventListener("ello:open-safety", openSafety);
-    window.addEventListener("ello:open-bible", openBible);
-    return () => {
-      window.removeEventListener("ello:open-safety", openSafety);
-      window.removeEventListener("ello:open-bible", openBible);
-    };
-  }, []);
-
-  // Sync ticket total from the server (garden_status is the source of truth)
-  useEffect(() => {
-    if (userId === "default") return;
-    tickets.syncFromServer(userId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  function handlePersonaSelect(p: Persona) {
-    // Allow conversation to restore again when persona changes
-    restoredRef.current = false;
-    setPersona(p); savePersona(p); setMessages([]); setShowSelect(false);
-  }
-
-  function handleChangeCharacter() {
-    window.speechSynthesis?.cancel(); setShowSelect(true);
-  }
-
-  function handleLangSelect(l: Language) {
-    setLang(l);
-    setShowLangSelect(false);
-  }
-
-  function handleChangeLanguage() {
-    window.speechSynthesis?.cancel();
-    setShowLangSelect(true);
-  }
-
-  /* ── Screens ── */
-  if (showLangSelect) {
-    return <LanguageSelect onSelect={handleLangSelect} initialCode={lang?.code} />;
-  }
-  if (showSelect) {
-    return <CharacterSelect onSelect={handlePersonaSelect} initialId={persona?.id} />;
-  }
-  if (showTicketPage) {
-    return <HappinessGarden userId={userId} onClose={() => setShowTicketPage(false)} langCode={lang?.code || getSavedLang().code} />;
-  }
-  if (showReminders) {
-    return <RemindersPage onClose={() => setShowReminders(false)} userId={userId} langCode={lang?.code || getSavedLang().code} />;
-  }
-  if (showBible) {
-    const currentLang = lang || getSavedLang();
-    return <BiblePage
-      onClose={() => setShowBible(false)}
-      langCode={currentLang.code}
-      onComplete={() => {
-        tickets.earn("checkin"); // +2 for completing Bible reading
-        tickets.earn("chat");   // +1 bonus
-        setShowBible(false);
-        const completeMsgs: Record<string, string> = {
-          ko: "오늘 말씀 다 읽으셨어요! 은혜로운 하루 되세요.",
-          en: "You finished today's reading! Have a blessed day.",
-          es: "¡Terminaste la lectura de hoy! Que tengas un día bendecido.",
-          zh: "你完成了今天的阅读!祝你有蒙福的一天。",
-          vi: "Bạn đã đọc xong hôm nay! Chúc một ngày được phước.",
-          ja: "今日の御言葉を読み終えました!恵みある一日を。",
-        };
-        const msg = completeMsgs[currentLang.code] || completeMsgs.ko;
-        setMessages((prev) => [...prev, { role: "assistant", content: msg }]);
-        setLastAssistantText(msg);
-        playTTS(msg);
-      }}
-    />;
-  }
-  if (showPlayground) {
-    return <PlaygroundPage onClose={() => setShowPlayground(false)} langCode={lang?.code || getSavedLang().code} />;
-  }
-  if (showSafety) {
-    return <SafetyPage onClose={() => setShowSafety(false)} langCode={lang?.code || getSavedLang().code} />;
-  }
-  if (showHealthWallet) {
-    return <HealthWalletPage onClose={() => setShowHealthWallet(false)} userId={userId} langCode={lang?.code || getSavedLang().code} />;
-  }
-  if (showMedications) {
-    return <MedicationPage onClose={() => setShowMedications(false)} langCode={lang?.code || getSavedLang().code} />;
-  }
-
-  /* ── Helpers ── */
-  function createRecognition(): SpeechRecognition | null {
-    if (typeof window === "undefined") return null;
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return null;
-    const r = new SR();
-    r.lang = (lang || getSavedLang()).speechLang || "ko-KR";
-    // Keep listening through pauses — elderly users speak slowly with breaths
-    r.continuous = true;
-    // Show interim results so user sees they're being heard
-    r.interimResults = true;
-    return r;
-  }
-
-  function stopCurrentAudio() {
-    // Abort any in-flight TTS fetch
-    if (ttsAbortRef.current) {
-      ttsAbortRef.current.abort();
-      ttsAbortRef.current = null;
-    }
-    // Stop and clean up any playing audio
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-      audioRef.current.onplay = null;
-      audioRef.current.onended = null;
-      audioRef.current.onerror = null;
-      const src = audioRef.current.src;
-      audioRef.current = null;
-      if (src.startsWith("blob:")) URL.revokeObjectURL(src);
-    }
-    setIsSpeaking(false);
-  }
-
-  async function playTTS(text: string) {
-    if (!persona) return;
-
-    // Always stop previous audio/request first
-    stopCurrentAudio();
-
-    const controller = new AbortController();
-    ttsAbortRef.current = controller;
-
-    try {
-      const res = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, voiceId: persona.voiceId, languageCode: lang?.speechLang }),
-        signal: controller.signal,
-      });
-
-      // If aborted while waiting, exit silently
-      if (controller.signal.aborted) return;
-      if (!res.ok) return;
-
-      const blob = await res.blob();
-      if (controller.signal.aborted) return;
-
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      audioRef.current = audio;
-
-      audio.onplay = () => setIsSpeaking(true);
-      audio.onended = () => { setIsSpeaking(false); URL.revokeObjectURL(url); audioRef.current = null; };
-      audio.onerror = () => { setIsSpeaking(false); URL.revokeObjectURL(url); audioRef.current = null; };
-
-      await audio.play();
-    } catch (err) {
-      // Ignore abort errors
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      setIsSpeaking(false);
-    }
-  }
-
-  function stopOrReplayTTS() {
-    if (isSpeaking || audioRef.current) {
-      stopCurrentAudio();
-    } else if (lastAssistantText) {
-      playTTS(lastAssistantText);
-    }
-  }
-
-  /* ── Chat JSX (inline to keep state access simple) ── */
-  return <ChatUI
-    persona={persona!} messages={messages} setMessages={(m) => { setMessages(m); messagesRef.current = m; }}
-    input={input} setInput={setInput}
-    isLoading={isLoading} setIsLoading={setIsLoading}
-    isListening={isListening} setIsListening={setIsListening}
-    isSpeaking={isSpeaking} lastAssistantText={lastAssistantText} setLastAssistantText={setLastAssistantText}
-    chatEndRef={chatEndRef} recognitionRef={recognitionRef} fileInputRef={fileInputRef} messagesRef={messagesRef}
-    playTTS={playTTS} stopOrReplayTTS={stopOrReplayTTS} createRecognition={createRecognition}
-    onChangeCharacter={handleChangeCharacter}
-    tickets={tickets} onShowTickets={() => setShowTicketPage(true)}
-    onShowReminders={() => setShowReminders(true)}
-    onShowPlayground={() => setShowPlayground(true)}
-    onShowHealthWallet={() => setShowHealthWallet(true)}
-    onShowMedications={() => setShowMedications(true)}
-    onChangeLang={handleChangeLanguage}
-    userCity={userCity}
-    lang={lang || getSavedLang()}
-    checkedIn={checkedIn} setCheckedIn={setCheckedIn}
-    appointmentToast={appointmentToast} setAppointmentToast={setAppointmentToast}
-    userId={userId}
-  />;
-}
-
-/* ── ChatUI Component ── */
-interface ChatUIProps {
-  persona: Persona;
-  messages: Message[]; setMessages: (m: Message[]) => void;
-  input: string; setInput: (s: string) => void;
-  isLoading: boolean; setIsLoading: (b: boolean) => void;
-  isListening: boolean; setIsListening: (b: boolean) => void;
-  isSpeaking: boolean;
-  lastAssistantText: string; setLastAssistantText: (s: string) => void;
-  chatEndRef: React.RefObject<HTMLDivElement>;
-  recognitionRef: React.MutableRefObject<SpeechRecognition | null>;
-  fileInputRef: React.RefObject<HTMLInputElement>;
-  messagesRef: React.MutableRefObject<Message[]>;
-  playTTS: (t: string) => void; stopOrReplayTTS: () => void;
-  createRecognition: () => SpeechRecognition | null;
-  onChangeCharacter: () => void;
-  tickets: ReturnType<typeof useTickets>;
-  onShowTickets: () => void;
-  onShowReminders: () => void;
-  onShowPlayground: () => void;
-  onShowHealthWallet: () => void;
-  onShowMedications: () => void;
-  onChangeLang: () => void;
-  userCity: string;
-  lang: Language;
-  checkedIn: boolean; setCheckedIn: (b: boolean) => void;
-  appointmentToast: boolean; setAppointmentToast: (b: boolean) => void;
-  userId: string;
-}
-
-/* ── Interpreter keyword detection ── */
+/* ── Interpreter keyword detection (voice-only feature, kept) ── */
 const INTERPRET_TRIGGERS = /통역|interpret|영어로 (해줘|말해|얘기해|대화해|통역해)|스페니시|스페인어로|중국어로|일본어로|베트남어로/i;
 const INTERPRET_EXIT = /^(끝|그만|종료|done|stop|통역 끝|대화 끝)$/i;
-
+const LANG_SPEECH_CODES: Record<string, string> = { en: "en-US", es: "es-ES", zh: "zh-CN", ja: "ja-JP", vi: "vi-VN", ko: "ko-KR" };
+const LANG_LABELS: Record<string, string> = { en: "영어", es: "스페인어", zh: "중국어", ja: "일본어", vi: "베트남어", ko: "한국어" };
 function detectTargetLang(text: string): string {
   if (/스페니시|스페인어|spanish|español/i.test(text)) return "es";
   if (/중국어|chinese|중국말/i.test(text)) return "zh";
@@ -567,314 +52,350 @@ function detectTargetLang(text: string): string {
   return "en";
 }
 
-const LANG_SPEECH_CODES: Record<string, string> = {
-  en: "en-US", es: "es-ES", zh: "zh-CN", ja: "ja-JP", vi: "vi-VN", ko: "ko-KR",
-};
-const LANG_LABELS: Record<string, string> = {
-  en: "English", es: "Español", zh: "中文", ja: "日本語", vi: "Tiếng Việt", ko: "한국어",
-};
+function loadContacts(): FamilyContact[] {
+  try { const raw = localStorage.getItem("ello-family-contacts"); return raw ? JSON.parse(raw) : []; } catch { return []; }
+}
+function todayLocalISO(): string {
+  return new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+}
 
-function ChatUI({
-  persona, messages, setMessages, input, setInput,
-  isLoading, setIsLoading, isListening, setIsListening, isSpeaking,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  lastAssistantText, setLastAssistantText,
-  chatEndRef, recognitionRef, fileInputRef, messagesRef,
-  playTTS, stopOrReplayTTS, createRecognition, onChangeCharacter,
-  tickets, onShowTickets, onShowReminders, onShowPlayground, onShowHealthWallet, onShowMedications, onChangeLang, userCity, lang, checkedIn, setCheckedIn, appointmentToast, setAppointmentToast, userId,
-}: ChatUIProps) {
+export default function Home() {
+  const lang = getSavedLang(); // ko by default; language selection screen removed
 
-  /* ── Interpreter mode state ── */
+  /* ── state ── */
+  const [userId, setUserId] = useState("default");
+  const [userName, setUserName] = useState("어르신");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [lastAssistantText, setLastAssistantText] = useState("");
+  const [liveTranscript, setLiveTranscript] = useState("");
+  const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [today, setToday] = useState<TodayItem[]>([]);
+  const [contacts, setContacts] = useState<FamilyContact[]>([]);
+  const [userCity, setUserCity] = useState("Los Angeles");
+  const [appointmentToast, setAppointmentToast] = useState(false);
+  const [textInputOn, setTextInputOn] = useState(false);
+  const [bigFont, setBigFont] = useState(false);
+
+  const [showSettings, setShowSettings] = useState(false);
+  const [showReminders, setShowReminders] = useState(false);
+  const [showHealthWallet, setShowHealthWallet] = useState(false);
+  const [showMedications, setShowMedications] = useState(false);
+  const [showSafety, setShowSafety] = useState(false);
+
+  /* interpreter mode */
   const [interpreterMode, setInterpreterMode] = useState(false);
   const [interpreterLang, setInterpreterLang] = useState("en");
   const [interpreterTurn, setInterpreterTurn] = useState<"user" | "other">("user");
   const interpreterHistoryRef = useRef<{ speaker: string; original: string; translated: string }[]>([]);
 
-  async function playInterpreterTTS(text: string, targetLangCode: string) {
+  /* refs */
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const ttsAbortRef = useRef<AbortController | null>(null);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const restoredRef = useRef(false);
+  const accumulatedTranscriptRef = useRef("");
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const SILENCE_MS = 2800;
+  const FIRST_SPEECH_MS = 8000;
+  const interpreterSessionRef = useRef(0);
+  const interpreterRecRef = useRef<SpeechRecognition | null>(null);
+
+  /* ── boot: auth, font scale, contacts, location ── */
+  useEffect(() => {
+    applyFontScale(FONT_STEPS[loadFontIdx()]);
+    setBigFont(loadFontIdx() > 0);
+    setContacts(loadContacts());
+    try { setTextInputOn(localStorage.getItem("ello-text-input") === "1"); } catch {}
+
+    const sb = createClient();
+    const tryGetUser = async (attempt = 1): Promise<void> => {
+      const { data: { session } } = await sb.auth.getSession();
+      const user = session?.user || (await sb.auth.getUser()).data.user;
+      if (user?.id) {
+        setUserId(user.id);
+        const n = user.user_metadata?.name || user.user_metadata?.full_name;
+        if (n) setUserName(`${n} 님`);
+        return;
+      }
+      if (attempt < 3) { await new Promise(r => setTimeout(r, 1000)); return tryGetUser(attempt + 1); }
+      window.location.href = "/login";
+    };
+    tryGetUser().catch(() => { window.location.href = "/login"; });
+
     try {
-      const res = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, voiceId: persona.voiceId, languageCode: targetLangCode }),
-      });
-      if (!res.ok) return;
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      await audio.play();
-      await new Promise<void>((resolve) => {
-        audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
-        audio.onerror = () => { URL.revokeObjectURL(url); resolve(); };
-      });
-    } catch { /* ignore */ }
+      const savedLoc = localStorage.getItem("ello-user-location");
+      if (savedLoc) { const loc = JSON.parse(savedLoc); if (loc.city) setUserCity(loc.city); }
+      else requestGeolocation();
+    } catch { requestGeolocation(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function requestGeolocation() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json`, { headers: { "User-Agent": "ElloCare/1.0" } });
+        if (res.ok) {
+          const data = await res.json();
+          const city = data.address?.city || data.address?.town || data.address?.county || "Los Angeles";
+          localStorage.setItem("ello-user-location", JSON.stringify({ lat: pos.coords.latitude, lon: pos.coords.longitude, city }));
+          setUserCity(city);
+        }
+      } catch {}
+    }, () => {}, { enableHighAccuracy: false, timeout: 10000 });
   }
 
-  function listenInLanguage(langCode: string): Promise<string> {
-    return new Promise((resolve) => {
-      if (typeof window === "undefined") { resolve(""); return; }
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR) { resolve(""); return; }
-      const r = new SR();
-      r.lang = LANG_SPEECH_CODES[langCode] || "en-US";
-      r.continuous = true;
-      r.interimResults = true;
-      let accumulated = "";
-      let silenceTimer: ReturnType<typeof setTimeout> | null = null;
-      const finish = () => {
-        if (silenceTimer) clearTimeout(silenceTimer);
-        try { r.stop(); } catch {}
-        resolve(accumulated.trim());
-      };
-      const resetSilence = () => {
-        if (silenceTimer) clearTimeout(silenceTimer);
-        silenceTimer = setTimeout(finish, 3000);
-      };
-      r.onresult = (ev: SpeechRecognitionResultEvent) => {
-        const allFinals: string[] = [];
-        for (let i = 0; i < ev.results.length; i++) {
-          if (ev.results[i].isFinal) allFinals.push(ev.results[i][0].transcript.trim());
-        }
-        let finalText = "";
-        for (const t of allFinals) {
-          if (!finalText) { finalText = t; continue; }
-          if (finalText === t || finalText.includes(t)) continue;
-          if (t.includes(finalText)) { finalText = t; continue; }
-          finalText = finalText + " " + t;
-        }
-        if (finalText) accumulated = finalText;
-        setInput(accumulated);
-        resetSilence();
-      };
-      r.onerror = () => finish();
-      r.onend = () => finish();
-      r.start();
-      setIsListening(true);
-      resetSilence();
-    });
-  }
+  /* ── GPS sharing for the family app ── */
+  useEffect(() => {
+    if (userId === "default") return;
+    startGPSTracking(userId);
+    return () => stopGPSTracking();
+  }, [userId]);
 
-  async function interpreterSend(text: string, speaker: "user" | "other") {
-    if (!text.trim()) return;
-    if (INTERPRET_EXIT.test(text.trim())) {
-      setInterpreterMode(false);
-      setInterpreterTurn("user");
-      const summary = interpreterHistoryRef.current.length > 0
-        ? "통역이 끝났어요. 대화 잘 하셨어요!"
-        : "통역 모드를 종료했어요.";
-      setMessages([...messagesRef.current, { role: "assistant", content: summary }]);
-      setLastAssistantText(summary);
-      playTTS(summary);
-      interpreterHistoryRef.current = [];
-      return;
-    }
-    const userMsg: Message = { role: "user", content: text };
-    setMessages([...messagesRef.current, userMsg]);
-    setInput("");
-    setIsLoading(true);
+  /* ── today card: appointments (DB) + medication times (device) ── */
+  async function loadToday() {
+    if (userId === "default") return;
+    const items: TodayItem[] = [];
+    try {
+      const res = await fetch(`/api/appointments?userId=${userId}`);
+      const data = await res.json();
+      const d = todayLocalISO();
+      for (const a of (data.appointments || []) as { title: string; scheduled_at: string; status?: string }[]) {
+        if (!a.scheduled_at?.startsWith(d)) continue;
+        if (a.status && a.status !== "upcoming") continue;
+        const m = a.scheduled_at.match(/T(\d{2}):(\d{2})/);
+        items.push({ time: m ? `${m[1]}:${m[2]}` : "", label: a.title, kind: "appointment" });
+      }
+    } catch {}
+    try {
+      for (const med of loadMeds()) {
+        if (!med.enabled) continue;
+        for (const t of med.times) items.push({ time: t, label: `${med.name} 약`, kind: "med" });
+      }
+    } catch {}
+    items.sort((a, b) => a.time.localeCompare(b.time));
+    // show what is still ahead today first; if nothing is ahead, show the day's list
+    const now = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date());
+    const ahead = items.filter(i => i.time >= now);
+    setToday((ahead.length > 0 ? ahead : items).slice(0, 3));
+  }
+  useEffect(() => { loadToday(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [userId, showReminders, showMedications]);
+
+  /* ── restore last 24h or greet ── */
+  useEffect(() => {
+    if (userId === "default" || restoredRef.current) return;
+    restoredRef.current = true;
+    fetch(`/api/conversations?userId=${userId}`)
+      .then(r => r.json())
+      .then(async (data) => {
+        const restored: Message[] = (data.messages || []).map((m: { role: string; content: string }) => ({ role: m.role as "user" | "assistant", content: m.content }));
+        if (restored.length > 0) {
+          setMessages(restored);
+          const lastA = [...restored].reverse().find(m => m.role === "assistant");
+          setLastAssistantText(lastA?.content || "");
+          return;
+        }
+        const greeting = await generateGreeting();
+        setMessages([{ role: "assistant", content: greeting }]);
+        setLastAssistantText(greeting);
+        playTTS(greeting);
+      })
+      .catch(() => { setMessages([{ role: "assistant", content: ELLO_GREETING }]); setLastAssistantText(ELLO_GREETING); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
+  async function generateGreeting(): Promise<string> {
     try {
       const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          interpreterMode: true,
-          messages: [{ role: "user", content: text }],
-          targetLang: interpreterLang,
-          speakerRole: speaker,
-          history: interpreterHistoryRef.current,
-        }),
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: [{ role: "user", content: "안녕" }], persona: ELLO.id, langPrompt: lang.systemPrompt, charName: ELLO.name, userId, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, greetingMode: true }),
       });
       const data = await res.json();
-      if (data.exit) {
-        setInterpreterMode(false);
-        setInterpreterTurn("user");
-        const exitMsg = data.forUser || "통역이 끝났어요.";
-        setMessages([...messagesRef.current, { role: "assistant", content: exitMsg }]);
-        setLastAssistantText(exitMsg);
-        playTTS(exitMsg);
-        interpreterHistoryRef.current = [];
-        setIsLoading(false);
-        return;
-      }
+      if (data.text && !data.error && data.text.length > 5) return data.text;
+    } catch {}
+    return ELLO_GREETING;
+  }
+
+  /* ── TTS ── */
+  function stopCurrentAudio() {
+    if (ttsAbortRef.current) { ttsAbortRef.current.abort(); ttsAbortRef.current = null; }
+    if (audioRef.current) {
+      audioRef.current.pause();
+      const src = audioRef.current.src;
+      audioRef.current.onplay = null; audioRef.current.onended = null; audioRef.current.onerror = null;
+      audioRef.current = null;
+      if (src.startsWith("blob:")) URL.revokeObjectURL(src);
+    }
+    setIsSpeaking(false);
+  }
+  async function playTTS(text: string, voiceLang?: string) {
+    stopCurrentAudio();
+    const controller = new AbortController();
+    ttsAbortRef.current = controller;
+    try {
+      const res = await fetch("/api/tts", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, voiceId: ELLO.voiceId, languageCode: voiceLang || lang.speechLang }),
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted || !res.ok) return;
+      const blob = await res.blob();
+      if (controller.signal.aborted) return;
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onplay = () => setIsSpeaking(true);
+      audio.onended = () => { setIsSpeaking(false); URL.revokeObjectURL(url); audioRef.current = null; };
+      audio.onerror = () => { setIsSpeaking(false); URL.revokeObjectURL(url); audioRef.current = null; };
+      await audio.play();
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      // autoplay blocked (no gesture yet) or playback error: forget the audio so the next bubble tap plays
+      if (audioRef.current) { const src = audioRef.current.src; audioRef.current = null; if (src.startsWith("blob:")) URL.revokeObjectURL(src); }
+      setIsSpeaking(false);
+    }
+  }
+  function playTTSAndWait(text: string, voiceLang: string): Promise<void> {
+    return new Promise((resolve) => {
+      stopCurrentAudio();
+      fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, voiceId: ELLO.voiceId, languageCode: voiceLang }) })
+        .then(r => r.ok ? r.blob() : Promise.reject())
+        .then(blob => {
+          const url = URL.createObjectURL(blob); const audio = new Audio(url); audioRef.current = audio;
+          audio.onplay = () => setIsSpeaking(true);
+          audio.onended = () => { setIsSpeaking(false); URL.revokeObjectURL(url); resolve(); };
+          audio.onerror = () => { setIsSpeaking(false); URL.revokeObjectURL(url); resolve(); };
+          audio.play().catch(() => { audioRef.current = null; setIsSpeaking(false); URL.revokeObjectURL(url); resolve(); });
+        })
+        .catch(() => resolve());
+    });
+  }
+  function onBubbleTap() {
+    if (isSpeaking || audioRef.current) stopCurrentAudio();
+    else if (lastAssistantText) playTTS(lastAssistantText);
+  }
+
+  /* ── chat ── */
+  async function sendMessage(textOverride?: string) {
+    const text = (textOverride ?? input).trim();
+    if (!text || isLoading) return;
+    setLiveTranscript("");
+
+    if (interpreterMode) { interpreterSend(text, interpreterTurn); return; }
+    if (INTERPRET_TRIGGERS.test(text)) {
+      const tLang = detectTargetLang(text);
+      setInterpreterMode(true); setInterpreterLang(tLang); setInterpreterTurn("user"); interpreterHistoryRef.current = [];
+      const msg = `통역을 시작할게요. 말씀하시면 제가 ${LANG_LABELS[tLang]}로 바꿔서 말하고, 상대방 말은 한국어로 알려드릴게요. 끝나면 끝이라고 하세요.`;
+      setMessages([...messagesRef.current, { role: "user", content: text }, { role: "assistant", content: msg }]);
+      setLastAssistantText(msg); setInput(""); playTTS(msg);
+      return;
+    }
+
+    // "딸한테 전화해줘"
+    const callMatch = text.match(/(딸|아들|손자|손녀|며느리|사위|엄마|아빠|형|누나|동생|언니|오빠)(한테|에게|이랑|랑|)?.*(전화|연락)\s*(해|걸|해줘|해 줘|좀|하고 싶|하자|할래)/);
+    if (callMatch) {
+      const c = findContactByKeyword(callMatch[1]);
+      if (c) { window.location.href = `tel:${c.phone}`; return; }
+    }
+
+    const userMsg: Message = { role: "user", content: text };
+    const newMsgs = [...messagesRef.current, userMsg];
+    setMessages(newMsgs); setInput(""); setIsLoading(true);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: newMsgs, persona: ELLO.id, langPrompt: lang.systemPrompt, charName: ELLO.name, userCity, userId, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
+      });
+      if (res.status === 401) { window.location.href = "/login"; return; }
+      const data = await res.json();
+      const reply = data.error ? "죄송해요, 잠시 문제가 있었어요. 다시 말씀해 주세요." : data.text;
+      if (data.appointmentSaved) { setAppointmentToast(true); setTimeout(() => setAppointmentToast(false), 3000); loadToday(); }
+      setMessages([...newMsgs, { role: "assistant", content: reply }]);
+      setLastAssistantText(reply);
+      if (!data.error) playTTS(reply);
+    } catch {
+      const reply = "연결에 문제가 있어요. 잠시 후 다시 말씀해 주세요.";
+      setMessages([...newMsgs, { role: "assistant", content: reply }]); setLastAssistantText(reply);
+    } finally { setIsLoading(false); }
+  }
+
+  /* ── interpreter (voice loop) ── */
+  function endInterpreter(msg?: string) {
+    interpreterSessionRef.current += 1; // invalidates any in-flight loop
+    try { interpreterRecRef.current?.stop(); } catch {}
+    interpreterRecRef.current = null;
+    stopCurrentAudio();
+    setIsListening(false); setIsLoading(false);
+    setInterpreterMode(false); setInterpreterTurn("user"); interpreterHistoryRef.current = [];
+    if (msg) { setMessages([...messagesRef.current, { role: "assistant", content: msg }]); setLastAssistantText(msg); playTTS(msg); }
+  }
+  function listenInLanguage(langCode: string): Promise<string> {
+    return new Promise((resolve) => {
+      const SR = typeof window !== "undefined" ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
+      if (!SR) { resolve(""); return; }
+      const r = new SR(); r.lang = LANG_SPEECH_CODES[langCode] || "en-US"; r.continuous = true; r.interimResults = true;
+      interpreterRecRef.current = r;
+      let acc = ""; let timer: ReturnType<typeof setTimeout> | null = null;
+      const finish = () => { if (timer) clearTimeout(timer); try { r.stop(); } catch {} if (interpreterRecRef.current === r) interpreterRecRef.current = null; setIsListening(false); resolve(acc.trim()); };
+      const reset = () => { if (timer) clearTimeout(timer); timer = setTimeout(finish, 3000); };
+      r.onresult = (ev: SpeechRecognitionResultEvent) => {
+        let finalText = "";
+        for (let i = 0; i < ev.results.length; i++) if (ev.results[i].isFinal) { const t = ev.results[i][0].transcript.trim(); if (t && !finalText.includes(t)) finalText = t.includes(finalText) ? t : `${finalText} ${t}`.trim(); }
+        if (finalText) acc = finalText; setLiveTranscript(acc); reset();
+      };
+      r.onerror = finish; r.onend = finish; r.start(); setIsListening(true); reset();
+    });
+  }
+  async function interpreterSend(text: string, speaker: "user" | "other") {
+    if (!text.trim()) return;
+    const session = interpreterSessionRef.current;
+    const alive = () => interpreterSessionRef.current === session;
+    const exit = (msg: string) => endInterpreter(msg);
+    if (INTERPRET_EXIT.test(text.trim())) { exit("통역을 마쳤어요."); return; }
+    const userMsg: Message = { role: "user", content: text };
+    setMessages([...messagesRef.current, userMsg]); setInput(""); setIsLoading(true);
+    try {
+      const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ interpreterMode: true, messages: [{ role: "user", content: text }], targetLang: interpreterLang, speakerRole: speaker, history: interpreterHistoryRef.current }) });
+      const data = await res.json();
+      if (!alive()) return;
+      setIsLoading(false);
+      if (data.exit) { exit(data.forUser || "통역을 마쳤어요."); return; }
       if (speaker === "user" && data.forOther) {
         interpreterHistoryRef.current.push({ speaker: "user", original: text, translated: data.forOther });
-        const displayMsg = "[" + (LANG_LABELS[interpreterLang] || "English") + "] " + data.forOther + (data.forUser ? "\n(" + data.forUser + ")" : "");
-        setMessages([...messagesRef.current, userMsg, { role: "assistant", content: displayMsg }]);
-        setLastAssistantText(displayMsg);
-        setIsLoading(false);
-        await playInterpreterTTS(data.forOther, interpreterLang);
+        const shown = `[${LANG_LABELS[interpreterLang]}] ${data.forOther}`;
+        setMessages([...messagesRef.current, userMsg, { role: "assistant", content: shown }]); setLastAssistantText(shown);
+        await playTTSAndWait(data.forOther, LANG_SPEECH_CODES[interpreterLang]);
+        if (!alive()) return;
         setInterpreterTurn("other");
-        setInput("");
-        const otherResponse = await listenInLanguage(interpreterLang);
-        setIsListening(false);
-        if (otherResponse) await interpreterSend(otherResponse, "other");
+        const other = await listenInLanguage(interpreterLang);
+        if (!alive()) return;
+        if (other) await interpreterSend(other, "other");
       } else if (speaker === "other" && data.forUser) {
         interpreterHistoryRef.current.push({ speaker: "other", original: text, translated: data.forUser });
-        const displayMsg = data.forUser;
-        setMessages([...messagesRef.current, userMsg, { role: "assistant", content: displayMsg }]);
-        setLastAssistantText(displayMsg);
-        setIsLoading(false);
-        await playInterpreterTTS(data.forUser, "ko");
+        setMessages([...messagesRef.current, userMsg, { role: "assistant", content: data.forUser }]); setLastAssistantText(data.forUser);
+        await playTTSAndWait(data.forUser, "ko-KR");
+        if (!alive()) return;
         setInterpreterTurn("user");
-        setInput("");
-        const userResponse = await listenInLanguage("ko");
-        setIsListening(false);
-        if (userResponse) await interpreterSend(userResponse, "user");
-      } else {
-        setIsLoading(false);
+        const mine = await listenInLanguage("ko");
+        if (!alive()) return;
+        if (mine) await interpreterSend(mine, "user");
       }
-    } catch {
-      setMessages([...messagesRef.current, { role: "assistant", content: "통역 중 오류가 발생했어요." }]);
-      setIsLoading(false);
-    }
+    } catch { setIsLoading(false); }
   }
 
-  // Save parsed memories to Supabase
-  async function saveMemories(memories: { date: string; time: string; content: string }[]) {
-    for (const m of memories) {
-      try {
-        await fetch("/api/memories", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(m),
-        });
-      } catch (err) {
-        console.error("[memory] Save failed:", err);
-      }
-    }
-  }
-
-  const sendMessage = useCallback(
-    async (textOverride?: string) => {
-      const text = textOverride || input.trim();
-      console.log(`[sendMessage] called, text="${text}", isLoading=${isLoading}, input="${input}"`);
-      if (!text || isLoading) { console.log("[sendMessage] BLOCKED: empty text or isLoading"); return; }
-
-      // ── Interpreter mode handling ──
-      if (interpreterMode) {
-        interpreterSend(text, interpreterTurn);
-        return;
-      }
-      if (INTERPRET_TRIGGERS.test(text)) {
-        const tLang = detectTargetLang(text);
-        setInterpreterMode(true);
-        setInterpreterLang(tLang);
-        setInterpreterTurn("user");
-        interpreterHistoryRef.current = [];
-        const langLabel = LANG_LABELS[tLang] || "English";
-        const confirmMsg = "통역 모드를 시작할게요 (" + langLabel + "). 말씀하시면 제가 " + langLabel + "로 바꿔서 말할게요. 상대방이 말하면 한국어로 바꿔드릴게요. 끝나면 끝이라고 하세요.";
-        setMessages([...messagesRef.current, { role: "user", content: text }, { role: "assistant", content: confirmMsg }]);
-        setLastAssistantText(confirmMsg);
-        setInput("");
-        playTTS(confirmMsg);
-        return;
-      }
-
-      tickets.earn("chat");
-
-      if (!checkedIn && /기분|안녕|잘 지|어떠/.test(text)) {
-        tickets.earn("checkin");
-        setCheckedIn(true);
-      }
-      if (/노래|부르|singing/.test(text)) {
-        tickets.earn("sing");
-      }
-
-      // Playground (games/music/radio) detection
-      if (/트로트|옛날\s?노래|라디오\s?틀|가요\s?틀|노래\s?틀|음악\s?틀|놀이터|게임|끝말잇기|속담|두뇌|찬송가|play\s?(music|radio|trot|game)/i.test(text)) {
-        const confirmMsg = lang.code === "ko"
-          ? "놀이터를 열어드릴게요! 게임도 하고 라디오도 듣고 옛날 노래도 들어보세요."
-          : "Opening the Playground for you! Play games, listen to radio and old songs.";
-        setMessages([...messagesRef.current, { role: "user", content: text }, { role: "assistant", content: confirmMsg }]);
-        setLastAssistantText(confirmMsg);
-        setInput("");
-        playTTS(confirmMsg);
-        setTimeout(() => onShowPlayground(), 1500);
-        return;
-      }
-
-      // Call detection: "딸한테 전화해줘", "아들에게 전화", etc.
-      const callMatch = text.match(/(딸|아들|손자|손녀|며느리|사위|엄마|아빠|형|누나|동생).*(전화|연락|call)/);
-      if (callMatch) {
-        const contact = findContactByKeyword(callMatch[1]);
-        if (contact) {
-          window.location.href = `tel:${contact.phone}`;
-          return;
-        }
-      }
-
-      const userMsg: Message = { role: "user", content: text };
-      const newMsgs = [...messagesRef.current, userMsg];
-      setMessages(newMsgs);
-      setInput("");
-      setIsLoading(true);
-
-      try {
-        const clientTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        const clientNow = new Date().toString();
-        console.log(`[sendMessage] Fetching /api/chat with ${newMsgs.length} messages, userId=${userId}, tz=${clientTz}, now=${clientNow}`);
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: newMsgs, persona: persona.id, langPrompt: lang.systemPrompt, charName: lang.charName, userCity, userId, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
-        });
-        console.log(`[sendMessage] Response status: ${res.status}`);
-        if (res.status === 401) {
-          // session expired → go back to login instead of a confusing error bubble
-          window.location.href = "/login";
-          return;
-        }
-        const data = await res.json();
-        // Header ticket count follows the server total when the chat granted points
-        if (typeof data._debug?.ticketChat?.total === "number") {
-          tickets.setTotal(data._debug.ticketChat.total);
-        }
-        console.log(`[sendMessage] appointmentSaved: ${data.appointmentSaved}, debug:`, data._debug);
-        if (data._debug?.ticketChat) {
-          console.log(`[ticket] chat grant result:`, data._debug.ticketChat);
-          if (data._debug.ticketChat.granted > 0) {
-            console.log(`✅ +${data._debug.ticketChat.granted} 포인트 적립됨 (total=${data._debug.ticketChat.total})`);
-          } else {
-            console.warn(`⚠️ 포인트 미적립 - reason: ${data._debug.ticketChat.reason}, elderId: ${data._debug.elderId}`);
-          }
-        }
-        const rawReply = data.error ? "죄송해요, 잠시 문제가 있었어요. 다시 말씀해주세요." : data.text;
-
-        // Parse and save any [MEMORY:] tags
-        const { cleanText: reply, memories } = parseMemories(rawReply);
-        if (memories.length > 0) saveMemories(memories);
-
-        // Show toast if appointment was auto-saved
-        if (data.appointmentSaved) {
-          setAppointmentToast(true);
-          setTimeout(() => setAppointmentToast(false), 3000);
-        }
-
-        setMessages([...newMsgs, { role: "assistant", content: reply }]);
-        setLastAssistantText(reply);
-
-        if (!data.error) playTTS(reply);
-      } catch {
-        setMessages([...newMsgs, { role: "assistant", content: "연결에 문제가 있어요." }]);
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [input, isLoading, persona.id, messagesRef, setMessages, setInput, setIsLoading, setLastAssistantText, playTTS, tickets, checkedIn, setCheckedIn, interpreterMode, interpreterTurn, interpreterLang]
-  );
-
-  function startWordGame() {
-    tickets.earn("wordgame");
-    sendMessage("끝말잇기 하자! 소연이가 먼저 시작해줘.");
-  }
-
+  /* ── photo → chat (documents, letters, suspicious texts) ── */
   function compressImage(file: File, maxSizeKB = 900): Promise<{ base64: string; mediaType: string; dataUrl: string }> {
     return new Promise((resolve, reject) => {
-      const img = new Image();
-      const reader = new FileReader();
+      const img = new Image(); const reader = new FileReader();
       reader.onload = () => {
         img.onload = () => {
-          let { width, height } = img;
-          const MAX = 1200;
+          let { width, height } = img; const MAX = 1200;
           if (width > MAX || height > MAX) { const s = MAX / Math.max(width, height); width = Math.round(width * s); height = Math.round(height * s); }
           const c = document.createElement("canvas"); c.width = width; c.height = height;
           c.getContext("2d")!.drawImage(img, 0, 0, width, height);
@@ -882,469 +403,222 @@ function ChatUI({
           while (d.length > maxSizeKB * 1365 && q > 0.3) { q -= 0.1; d = c.toDataURL("image/jpeg", q); }
           resolve({ base64: d.split(",")[1], mediaType: "image/jpeg", dataUrl: d });
         };
-        img.onerror = () => reject(new Error("Image load failed"));
-        img.src = reader.result as string;
+        img.onerror = () => reject(new Error("image")); img.src = reader.result as string;
       };
-      reader.onerror = () => reject(new Error("File read failed"));
-      reader.readAsDataURL(file);
+      reader.onerror = () => reject(new Error("read")); reader.readAsDataURL(file);
     });
   }
-
   async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file || isLoading) return;
-    e.target.value = "";
-    tickets.earn("photo");
+    const file = e.target.files?.[0]; if (!file || isLoading) return; e.target.value = "";
     try {
-      const imageData = await compressImage(file);
-      const userMsg: Message = { role: "user", content: "이 사진 좀 봐주세요", image: imageData };
+      const image = await compressImage(file);
+      const userMsg: Message = { role: "user", content: "이 사진 좀 봐주세요", image };
       const newMsgs = [...messagesRef.current, userMsg];
-      setMessages(newMsgs);
-      setIsLoading(true);
-      try {
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            persona: persona.id,
-            langPrompt: lang.systemPrompt,
-            charName: lang.charName,
-            userCity,
-            userId,
-            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            messages: newMsgs.map((m) => ({
-              role: m.role, content: m.content,
-              ...(m.image ? { image: { base64: m.image.base64, mediaType: m.image.mediaType } } : {}),
-            })),
-          }),
-        });
-        const data = await res.json();
-        const reply = data.error ? "죄송해요, 사진을 확인하는 데 문제가 있었어요." : data.text;
-        setMessages([...newMsgs, { role: "assistant", content: reply }]);
-        setLastAssistantText(reply);
-
-        if (!data.error) playTTS(reply);
-      } catch {
-        setMessages([...newMsgs, { role: "assistant", content: "연결에 문제가 있어요." }]);
-      } finally {
-        setIsLoading(false);
-      }
-    } catch (err) { console.error("[image] Failed:", err); }
+      setMessages(newMsgs); setIsLoading(true);
+      const res = await fetch("/api/chat", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ persona: ELLO.id, langPrompt: lang.systemPrompt, charName: ELLO.name, userCity, userId, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          messages: newMsgs.map(m => ({ role: m.role, content: m.content, ...(m.image ? { image: { base64: m.image.base64, mediaType: m.image.mediaType } } : {}) })) }),
+      });
+      const data = await res.json();
+      const reply = data.error ? "죄송해요, 사진을 확인하는 데 문제가 있었어요." : data.text;
+      setMessages([...newMsgs, { role: "assistant", content: reply }]); setLastAssistantText(reply);
+      if (!data.error) playTTS(reply);
+    } catch {} finally { setIsLoading(false); }
   }
 
-  // Refs for accumulated transcript and silence timeout used during listening
-  const accumulatedTranscriptRef = useRef<string>("");
-  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const SILENCE_MS = 2800; // how long to wait after user stops speaking before auto-sending
-
-  const toggleListening = useCallback(() => {
-    // If already listening: stop + send whatever has been accumulated
-    if (isListening) {
-      if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
-      recognitionRef.current?.stop();
-      setIsListening(false);
-      const finalText = accumulatedTranscriptRef.current.trim();
-      accumulatedTranscriptRef.current = "";
-      if (finalText) {
-        setInput(finalText);
-        setTimeout(() => sendMessage(finalText), 150);
-      }
-      return;
-    }
-
-    // Start a fresh listening session
-    const r = createRecognition();
-    if (!r) { alert("음성 인식이 지원되지 않습니다. Chrome을 사용해주세요."); return; }
-    recognitionRef.current = r;
+  /* ── voice input ── */
+  function createRecognition(): SpeechRecognition | null {
+    const SR = typeof window !== "undefined" ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
+    if (!SR) return null;
+    const r = new SR(); r.lang = lang.speechLang || "ko-KR"; r.continuous = true; r.interimResults = true;
+    return r;
+  }
+  function finishListening(send: boolean) {
+    if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
+    const r = recognitionRef.current;
+    recognitionRef.current = null; // detach first: any late onresult/onend from r is ignored
+    try { r?.stop(); } catch {}
+    setIsListening(false);
+    const finalText = accumulatedTranscriptRef.current.trim();
     accumulatedTranscriptRef.current = "";
-
-    // Helper: (re)schedule the auto-send that fires after user has stopped talking
-    const scheduleAutoSend = () => {
+    if (send && finalText) sendMessage(finalText);
+    else setLiveTranscript("");
+  }
+  function toggleListening() {
+    if (interpreterMode) { endInterpreter("통역을 마쳤어요."); return; } // the mic doubles as the interpreter's off switch
+    if (isListening) { finishListening(true); return; }
+    stopCurrentAudio();
+    const r = createRecognition();
+    if (!r) { alert("이 브라우저는 음성 인식을 지원하지 않아요. Chrome이나 Safari를 사용해 주세요."); return; }
+    recognitionRef.current = r; accumulatedTranscriptRef.current = ""; setLiveTranscript("");
+    const scheduleAutoSend = (ms = SILENCE_MS) => {
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = setTimeout(() => {
-        silenceTimerRef.current = null;
-        try { recognitionRef.current?.stop(); } catch {}
-        const finalText = accumulatedTranscriptRef.current.trim();
-        accumulatedTranscriptRef.current = "";
-        setIsListening(false);
-        if (finalText) {
-          setInput(finalText);
-          sendMessage(finalText);
-        }
-      }, SILENCE_MS);
+      silenceTimerRef.current = setTimeout(() => { silenceTimerRef.current = null; finishListening(true); }, ms);
     };
-
     r.onresult = (ev) => {
-      // Mobile Web Speech API quirks (especially iPhone Safari / Android Chrome):
-      //  (a) emits the SAME final transcript multiple times → "오늘 오늘 오늘 ..."
-      //  (b) emits CUMULATIVE finals where each later final contains the earlier
-      //      one as a prefix (e.g. "오늘", "오늘 예약", "오늘 예약 잡아줘")
-      //  (c) interim may repeat the already-finalized text
-      // Strategy: overlap-aware merge (superset wins, strict duplicates dropped),
-      // then strip overlap between finalText tail and interim head.
-      const allFinals: string[] = [];
-      let interim = "";
-      for (let i = 0; i < ev.results.length; i++) {
-        const res = ev.results[i];
-        const transcript = (res[0]?.transcript || "").trim();
-        if (!transcript) continue;
-        if (res.isFinal) {
-          allFinals.push(transcript);
-        } else {
-          // Keep only the latest interim (usually cumulative on mobile)
-          interim = transcript;
-        }
-      }
-
-      // Overlap-aware merge of finals: skip duplicates/subsets, upgrade to superset, append truly new phrases
+      if (recognitionRef.current !== r) return; // finished already (button tap) — ignore late results
+      const finals: string[] = []; let interim = "";
+      for (let i = 0; i < ev.results.length; i++) { const t = (ev.results[i][0]?.transcript || "").trim(); if (!t) continue; if (ev.results[i].isFinal) finals.push(t); else interim = t; }
       let finalText = "";
-      for (const t of allFinals) {
-        if (!finalText) { finalText = t; continue; }
-        if (finalText === t) continue;              // exact duplicate
-        if (finalText.includes(t)) continue;         // subset of current
-        if (t.includes(finalText)) { finalText = t; continue; } // superset — upgrade
-        finalText = finalText + " " + t;             // genuine new phrase
+      for (const t of finals) { if (!finalText) { finalText = t; continue; } if (finalText === t || finalText.includes(t)) continue; if (t.includes(finalText)) { finalText = t; continue; } finalText = `${finalText} ${t}`; }
+      let shownInterim = interim;
+      if (finalText && shownInterim) {
+        if (shownInterim === finalText || finalText.endsWith(shownInterim)) shownInterim = "";
+        else if (shownInterim.startsWith(finalText + " ")) shownInterim = shownInterim.slice(finalText.length + 1);
+        else for (let len = Math.min(finalText.length, shownInterim.length); len > 0; len--) { if (shownInterim.startsWith(finalText.slice(-len))) { shownInterim = shownInterim.slice(len).trim(); break; } }
       }
-
-      // Strip interim head if it overlaps with finalText tail
-      let displayInterim = interim;
-      if (finalText && displayInterim) {
-        if (displayInterim === finalText || finalText.endsWith(displayInterim)) {
-          displayInterim = "";
-        } else if (displayInterim.startsWith(finalText + " ")) {
-          displayInterim = displayInterim.slice(finalText.length + 1);
-        } else {
-          // Find longest suffix of finalText that is a prefix of interim
-          for (let len = Math.min(finalText.length, displayInterim.length); len > 0; len--) {
-            if (displayInterim.startsWith(finalText.slice(-len))) {
-              displayInterim = displayInterim.slice(len).trim();
-              break;
-            }
-          }
-        }
-      }
-
       accumulatedTranscriptRef.current = finalText;
-      setInput((finalText + (displayInterim ? " " + displayInterim : "")).trim());
-      // Any new speech activity → restart the silence countdown
+      setLiveTranscript((finalText + (shownInterim ? " " + shownInterim : "")).trim());
       scheduleAutoSend();
     };
-
-    r.onerror = () => {
-      if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
-      setIsListening(false);
-    };
-
-    // onend can fire due to browser's internal timeout even with continuous=true.
-    // If it fires, send whatever we've captured so far.
-    r.onend = () => {
-      if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
-      setIsListening(false);
-      const finalText = accumulatedTranscriptRef.current.trim();
-      accumulatedTranscriptRef.current = "";
-      if (finalText) {
-        setInput(finalText);
-        sendMessage(finalText);
-      }
-    };
-
-    r.start();
-    setIsListening(true);
-    scheduleAutoSend(); // seed the timer so long silence from the start also terminates
-  }, [isListening, sendMessage, recognitionRef, setIsListening, setInput, createRecognition]);
-
-  function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    r.onerror = () => { if (recognitionRef.current === r) finishListening(false); };
+    r.onend = () => { if (recognitionRef.current === r) finishListening(true); };
+    r.start(); setIsListening(true);
+    scheduleAutoSend(FIRST_SPEECH_MS); // elders pause before speaking — give them time before the first word
   }
 
+  /* ── family call ── */
+  const primary = contacts[0];
+  const callLabel = primary ? `${primary.relation || primary.name}에게 전화` : "가족 연락처 등록";
+  function onFamilyCall() {
+    if (primary) window.location.href = `tel:${primary.phone}`;
+    else setShowSafety(true);
+  }
+  function toggleTextInput() {
+    const next = !textInputOn; setTextInputOn(next);
+    try { localStorage.setItem("ello-text-input", next ? "1" : "0"); } catch {}
+  }
+
+  /* ── sub pages (all hooks are above this line) ── */
+  const closeAll = () => { setShowSettings(false); setShowReminders(false); setShowHealthWallet(false); setShowMedications(false); setShowSafety(false); setContacts(loadContacts()); setBigFont(loadFontIdx() > 0); };
+  if (showReminders) return <RemindersPage onClose={closeAll} userId={userId} langCode="ko" />;
+  if (showHealthWallet) return <HealthWalletPage onClose={closeAll} userId={userId} langCode="ko" />;
+  if (showMedications) return <MedicationPage onClose={closeAll} langCode="ko" />;
+  if (showSafety) return <SafetyPage onClose={closeAll} langCode="ko" />;
+  if (showSettings) return (
+    <SettingsPage userName={userName} onClose={closeAll}
+      onOpenReminders={() => setShowReminders(true)} onOpenHealthWallet={() => setShowHealthWallet(true)}
+      onOpenMedications={() => setShowMedications(true)} onOpenSafety={() => setShowSafety(true)}
+      textInputOn={textInputOn} onToggleTextInput={toggleTextInput} />
+  );
+
+  /* ── HOME ── */
+  const showingTranscript = isListening || (!!liveTranscript && !lastAssistantText);
   return (
-    <div className="flex flex-col h-dvh max-w-app mx-auto bg-cream relative">
+    <div className="flex flex-col h-dvh max-w-app mx-auto bg-cream overflow-hidden">
 
-      {/* Toast notification */}
-      {tickets.toast && <TicketToast points={tickets.toast.points} label={tickets.toast.label} />}
-
-      {/* Appointment saved toast */}
+      {/* toast: 일정 저장됨 */}
       {appointmentToast && (
-        <div style={{
-          position: "fixed", top: 60, left: "50%", transform: "translateX(-50%)", zIndex: 50,
-          background: "#fff", borderRadius: 16, boxShadow: "0 4px 20px rgba(27,111,232,0.15)",
-          padding: "12px 20px", display: "flex", alignItems: "center", gap: 8,
-          border: "1px solid #e0ecff",
-        }}>
-          <span style={{ fontSize: 20 }}>📅</span>
-          <span style={{ color: "#1B6FE8", fontWeight: 700, fontSize: 14 }}>일정이 저장되었습니다</span>
-        </div>
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-white rounded-2xl shadow-lg border-2 border-[#EADFD3] px-5 py-3 text-[20px] font-bold text-[#1F7A47]">일정을 저장했어요</div>
       )}
 
-      {/* ── Interpreter mode banner ── */}
-      {interpreterMode && (
-        <div style={{
-          background: "linear-gradient(135deg, #1B6FE8 0%, #4A90D9 100%)",
-          color: "white", padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between",
-          fontSize: 14, fontWeight: 600,
-        }}>
-          <span>
-            {interpreterTurn === "user" ? "🎤 " : "🗣 "}
-            통역 중 ({LANG_LABELS[interpreterLang]})
-            {interpreterTurn === "user" ? " — 말씀하세요" : " — 상대방 차례"}
-          </span>
-          <button onClick={() => { setInterpreterMode(false); setInterpreterTurn("user"); interpreterHistoryRef.current = [];
-            const exitMsg = "통역 모드를 종료했어요.";
-            setMessages([...messagesRef.current, { role: "assistant", content: exitMsg }]);
-            playTTS(exitMsg);
-          }} style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "white", borderRadius: 8, padding: "4px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-            끝
-          </button>
-        </div>
-      )}
-
-      {/* ── Header ── */}
-      <header className="flex items-center justify-between px-5 py-3.5 bg-cream">
+      {/* header */}
+      <div className="flex items-center justify-between px-5 pt-3">
         <div className="flex items-center gap-1.5">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="#FF6B35" stroke="none">
-            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-          </svg>
-          <span className="text-warm-brown font-bold text-xl tracking-tight">Ello</span>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="#FF6B35"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /></svg>
+          <span className="text-[22px] font-bold text-[#2B211C]">Ello</span>
         </div>
-
-        <div className="flex items-center gap-2">
-          {/* Ticket counter */}
-          <button
-            onClick={onShowTickets}
-            className="flex items-center gap-1 px-2.5 py-1.5 bg-coral-pastel rounded-full hover:bg-coral/15 transition-colors"
-          >
-            <span className="text-sm">&#x2B50;</span>
-            <span className="text-coral font-bold text-[13px]">{tickets.state.total}</span>
-          </button>
-
-          {/* Language flag button */}
-          <button onClick={onChangeLang}
-            className="w-8 h-8 rounded-full bg-coral-pastel flex items-center justify-center hover:bg-coral/15 transition-colors text-sm"
-            aria-label="언어 변경">
-            {lang.flag}
-          </button>
-
-          {/* Persona badge */}
-          <span className="text-[11px] font-medium px-2 py-1 rounded-full"
-            style={{ background: persona.iconBg, color: persona.color }}>
-            {getPersonaText(persona.id, lang.code).name}
-          </span>
-
-          {/* Settings menu */}
-          <SettingsMenu onChangeCharacter={onChangeCharacter} />
-        </div>
-      </header>
-
-      {/* ── Persistent hero avatar (video-call style, always visible) ── */}
-      <div
-        className="flex flex-col items-center justify-center shrink-0"
-        style={{ height: "35vh", minHeight: 220 }}
-      >
-        <CharacterAvatar
-          personaId={persona.id}
-          size={180}
-          speaking={isSpeaking}
-          showLabel
-          label={lang.charName}
-          badge={getPersonaText(persona.id, lang.code).badge}
-        />
+        <button onClick={() => setShowSettings(true)} className="h-12 px-[18px] rounded-full bg-white border-2 border-[#D9CCC0] flex items-center gap-2 active:scale-95" aria-label="설정">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2B211C" strokeWidth="2.4" strokeLinecap="round"><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></svg>
+          <span className="text-[20px] font-bold text-[#2B211C]">설정</span>
+        </button>
       </div>
 
-      {/* ── Chat area (scrolls within remaining 2/3) ── */}
-      <div className="flex-1 overflow-y-auto chat-scroll px-4 py-2 space-y-2">
-        {messages.map((msg, i) => (
-          <div key={i} className={`flex items-end gap-1.5 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div className={`max-w-[80%] px-3.5 py-2.5 text-[14px] leading-relaxed ${
-              msg.role === "user"
-                ? "bg-coral text-white rounded-[18px] rounded-br-[5px] shadow-sm shadow-coral/15"
-                : "bg-warm-white text-warm-gray rounded-[18px] rounded-bl-[5px] shadow-sm shadow-warm-gray/8"
-            }`}>
-              {msg.image && <img src={msg.image.dataUrl} alt="사진" className="rounded-xl mb-1.5 max-h-36 w-auto" />}
-              {msg.content}
-            </div>
-          </div>
-        ))}
+      {/* Ello */}
+      <div className="flex flex-col items-center pt-1 shrink-0">
+        <CharacterAvatar personaId={ELLO.id} size={104} speaking={isSpeaking} showLabel label={ELLO.name} badge={ELLO.badge} />
+      </div>
 
-        {isLoading && (
-          <div className="flex items-end gap-1.5 justify-start">
-            <div className="bg-warm-white px-4 py-3 rounded-[18px] rounded-bl-[5px] shadow-sm shadow-warm-gray/8">
-              <span className="inline-flex gap-1.5">
-                <span className="w-1.5 h-1.5 bg-coral/40 rounded-full animate-bounce" />
-                <span className="w-1.5 h-1.5 bg-coral/40 rounded-full animate-bounce" style={{ animationDelay: "0.15s" }} />
-                <span className="w-1.5 h-1.5 bg-coral/40 rounded-full animate-bounce" style={{ animationDelay: "0.3s" }} />
-              </span>
-            </div>
+      {/* middle: words + today. Scrolls only if the screen is short or the font is enlarged; controls stay pinned. */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div className="px-5 pt-2">
+        {interpreterMode && (
+          <div className="mb-2 flex items-center justify-between rounded-2xl bg-[#1F7A47] text-white px-4 py-2 text-[17px] font-bold">
+            <span className="text-[20px]">통역 중 ({LANG_LABELS[interpreterLang]}) — {interpreterTurn === "user" ? "말씀하세요" : "상대방 차례"}</span>
+            <button onClick={() => endInterpreter("통역을 마쳤어요.")} className="bg-white/20 rounded-xl px-5 h-12 text-[20px]">끝</button>
           </div>
         )}
-        <div ref={chatEndRef} />
-      </div>
-
-      {/* ── Quick suggestions + 끝말잇기 ── */}
-      <div className="px-4 pb-2 flex gap-2 overflow-x-auto no-scrollbar">
-        {lang.ui.quickButtons.map((t) => (
-          <button key={t} onClick={() => sendMessage(t)}
-            className="px-3.5 py-2 bg-coral-pastel text-coral-dark rounded-full text-[13px] font-medium hover:bg-coral/15 active:bg-coral/20 transition-colors whitespace-nowrap shrink-0">
-            {t}
-          </button>
-        ))}
-        <button onClick={startWordGame}
-          className="px-3.5 py-2 bg-coral/10 text-coral rounded-full text-[13px] font-bold hover:bg-coral/20 active:bg-coral/25 transition-colors whitespace-nowrap shrink-0 border border-coral/20">
-          {lang.ui.wordGame}
-        </button>
-        <button onClick={onShowPlayground}
-          className="px-3.5 py-2 bg-coral/10 text-coral rounded-full text-[13px] font-bold hover:bg-coral/20 active:bg-coral/25 transition-colors whitespace-nowrap shrink-0 border border-coral/20">
-          {lang.code === "ko" ? "놀이터" : "Playground"}
-        </button>
-        <button onClick={onShowReminders}
-          className="px-3.5 py-2 bg-coral/10 text-coral rounded-full text-[13px] font-bold hover:bg-coral/20 active:bg-coral/25 transition-colors whitespace-nowrap shrink-0 border border-coral/20">
-          {lang.ui.schedule}
-        </button>
-      </div>
-
-      {/* ── Bottom bar ── */}
-      <div className="bg-cream border-t border-warm-gray-light/15 px-4 pt-3 pb-5">
-        <div className="mb-3">
-          <div className="flex items-end gap-2">
-            <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
-              placeholder={lang.ui.placeholder} rows={1}
-              className="flex-1 px-4 py-3 bg-warm-white rounded-2xl border border-warm-gray-light/15 text-[15px] text-warm-gray placeholder:text-warm-gray-light/50 focus:outline-none focus:border-coral/30 focus:ring-2 focus:ring-coral/10 resize-none min-h-[46px]" />
-            {input.trim() && (
-              <button onClick={() => sendMessage()} disabled={isLoading}
-                className="w-[46px] h-[46px] bg-coral text-white rounded-full flex items-center justify-center shrink-0 shadow-sm shadow-coral/20 active:scale-95 transition-all disabled:opacity-50"
-                aria-label="보내기">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
-                </svg>
-              </button>
+        {showingTranscript ? (
+          <div className="bg-[#FFE6D9] rounded-[22px] rounded-br-md px-[18px] py-3.5 border-2 border-[#EADFD3] min-h-[64px] max-h-[170px] overflow-y-auto text-[24px] leading-[1.4] font-medium text-[#2B211C]">
+            {liveTranscript || <span className="text-[#C2410C]">말씀하세요…</span>}
+          </div>
+        ) : (
+          <button onClick={onBubbleTap} className="w-full text-left bg-white rounded-[22px] rounded-bl-md px-[18px] py-3.5 border-2 border-[#EADFD3] active:bg-[#FFF2E8]">
+            {isSpeaking && (
+              <div className="flex items-end gap-[3px] h-[18px] mb-1.5">
+                {[9, 18, 12, 15].map((h, i) => <span key={i} className="w-[5px] rounded-sm bg-[#C2410C] animate-pulse" style={{ height: h, animationDelay: `${i * 0.12}s` }} />)}
+                <span className="text-[18px] font-bold text-[#C2410C] ml-1.5">말하는 중 · 누르면 멈춰요</span>
+              </div>
             )}
-          </div>
-        </div>
-        <div className="flex items-center justify-center gap-6">
-          <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleImageUpload} className="hidden" />
-          <ImageButton onClick={() => fileInputRef.current?.click()} disabled={isLoading} label={lang.ui.camera} />
-          <VoiceButton isListening={isListening} onClick={toggleListening} disabled={isLoading} label={lang.ui.mic} />
-          <SpeakerButton isSpeaking={isSpeaking} onClick={stopOrReplayTTS} label={lang.ui.speaker} labelActive={lang.ui.speaking} />
-        </div>
-        {isListening && <p className="text-center text-sm text-coral mt-2 animate-pulse font-medium">{lang.ui.listening}</p>}
+            <div className="text-[24px] leading-[1.4] font-medium text-[#2B211C] max-h-[170px] overflow-y-auto" style={{ textWrap: "pretty" }}>
+              {isLoading ? <span className="text-[#5C4F48]">생각하고 있어요…</span> : (lastAssistantText || ELLO_GREETING)}
+            </div>
+          </button>
+        )}
       </div>
 
-      {/* ── Bottom Tab Navigation (5 tabs, large icons) ── */}
-      <nav className="bg-cream border-t border-warm-gray-light/15 px-2 pt-2 pb-5">
-        <div className="flex items-center justify-around">
-          {/* 홈 */}
-          <button onClick={onChangeCharacter} className="flex flex-col items-center gap-1 min-w-0 flex-1 py-2 text-warm-gray-light active:scale-95 transition-transform">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-              <polyline points="9 22 9 12 15 12 15 22" />
-            </svg>
-            <span className="text-[12px] font-semibold">{lang.ui.home}</span>
-          </button>
-
-          {/* 일정 */}
-          <button onClick={onShowReminders} className="flex flex-col items-center gap-1 min-w-0 flex-1 py-2 text-warm-gray-light active:scale-95 transition-transform">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-              <line x1="16" y1="2" x2="16" y2="6" />
-              <line x1="8" y1="2" x2="8" y2="6" />
-              <line x1="3" y1="10" x2="21" y2="10" />
-            </svg>
-            <span className="text-[12px] font-semibold">{lang.ui.schedule}</span>
-          </button>
-
-          {/* 놀이터 */}
-          <button onClick={onShowPlayground} className="flex flex-col items-center gap-1 min-w-0 flex-1 py-2 text-warm-gray-light active:scale-95 transition-transform">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10" />
-              <polygon points="10,8 16,12 10,16" fill="currentColor" stroke="none" />
-            </svg>
-            <span className="text-[12px] font-semibold">{lang.code === "ko" ? "놀이터" : "Playground"}</span>
-          </button>
-
-          {/* 건강수첩 */}
-          <button onClick={onShowHealthWallet} className="flex flex-col items-center gap-1 min-w-0 flex-1 py-2 text-warm-gray-light active:scale-95 transition-transform">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-            </svg>
-            <span className="text-[12px] font-semibold">{lang.code === "ko" ? "건강수첩" : "Health"}</span>
-          </button>
-
-          {/* 약 챙겨먹기 */}
-          <button onClick={onShowMedications} className="flex flex-col items-center gap-1 min-w-0 flex-1 py-2 text-warm-gray-light active:scale-95 transition-transform">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="8" width="18" height="8" rx="4" transform="rotate(-45 12 12)" />
-              <line x1="8.5" y1="8.5" x2="15.5" y2="15.5" />
-            </svg>
-            <span className="text-[12px] font-semibold">{lang.code === "ko" ? "약" : "Meds"}</span>
-          </button>
+      {/* today */}
+      <div className="px-5 pt-3 pb-2">
+        <div className="bg-white rounded-[22px] border-2 border-[#EADFD3] px-[18px] pt-3 pb-1">
+          <div className="text-[20px] font-bold text-[#5C4F48] pb-1">오늘</div>
+          {today.length === 0 ? (
+            <div className="h-[54px] flex items-center text-[22px] font-medium text-[#5C4F48]">오늘은 일정이 없어요</div>
+          ) : today.slice(0, bigFont ? 2 : 3).map((t, i, arr) => (
+            <div key={i} className={`flex items-center gap-3.5 h-[54px] ${i < arr.length - 1 ? "border-b-2 border-[#F0E6DA]" : ""}`}>
+              <span className="w-[92px] text-[28px] font-black text-[#C2410C]">{t.time}</span>
+              <span className="text-[24px] font-medium text-[#2B211C] truncate">{t.label}</span>
+            </div>
+          ))}
         </div>
-      </nav>
-    </div>
-  );
-}
+      </div>
+      </div>
 
-/* ── Settings Dropdown Menu ── */
-function SettingsMenu({ onChangeCharacter }: { onChangeCharacter: () => void }) {
-  const [open, setOpen] = useState(false);
-
-  async function handleLogout() {
-    const sb = createClient();
-    await sb.auth.signOut();
-    window.location.href = "/login";
-  }
-
-  return (
-    <div style={{ position: "relative" }}>
-      <button
-        onClick={() => setOpen(!open)}
-        style={{
-          width: 32, height: 32, borderRadius: 16,
-          background: "#FFE6D9", border: "none", cursor: "pointer",
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}
-        aria-label="설정"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FF6B35" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" />
-        </svg>
-      </button>
-
-      {open && (
-        <>
-          {/* Backdrop */}
-          <div
-            onClick={() => setOpen(false)}
-            style={{ position: "fixed", inset: 0, zIndex: 40 }}
-          />
-          {/* Menu */}
-          <div style={{
-            position: "absolute", top: 36, right: 0, zIndex: 50,
-            background: "#fff", borderRadius: 12, boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
-            minWidth: 160, overflow: "hidden",
-          }}>
-            <button
-              onClick={() => { setOpen(false); onChangeCharacter(); }}
-              style={{
-                display: "block", width: "100%", padding: "12px 16px",
-                fontSize: 14, color: "#3D3530", background: "none", border: "none",
-                textAlign: "left", cursor: "pointer",
-              }}
-            >
-              캐릭터 변경
-            </button>
-            <div style={{ height: 1, background: "#f0f0f0" }} />
-            <button
-              onClick={() => { setOpen(false); handleLogout(); }}
-              style={{
-                display: "block", width: "100%", padding: "12px 16px",
-                fontSize: 14, color: "#EF4444", background: "none", border: "none",
-                textAlign: "left", cursor: "pointer",
-              }}
-            >
-              로그아웃
-            </button>
-          </div>
-        </>
+      {/* optional keyboard input (off by default; family can turn on in 설정) */}
+      {textInputOn && !isListening && (
+        <div className="px-5 pb-2 flex gap-2">
+          <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter") sendMessage(); }}
+            placeholder="글로 쓰기" className="flex-1 h-14 px-4 rounded-2xl bg-white border-2 border-[#D9CCC0] text-[20px] text-[#2B211C] focus:outline-none focus:border-[#FF6B35]" />
+          {input.trim() && <button onClick={() => sendMessage()} disabled={isLoading} className="h-14 px-5 rounded-2xl bg-[#FF6B35] text-white text-[20px] font-bold">보내기</button>}
+        </div>
       )}
+
+      {/* mic row */}
+      <div className="relative flex flex-col items-center gap-2 px-5 shrink-0">
+        <button onClick={toggleListening} disabled={isLoading && !isListening} aria-label={isListening ? "말하기 끝" : "말하기"}
+          className={`relative w-[120px] h-[120px] rounded-full bg-[#FF6B35] flex items-center justify-center active:scale-95 transition-transform disabled:opacity-60 ${isListening ? "shadow-[0_10px_26px_rgba(255,107,53,0.45)]" : "shadow-[0_10px_26px_rgba(255,107,53,0.35)]"}`}>
+          {isListening && (<>
+            <span className="absolute inset-0 rounded-full bg-[#FF6B35]/35 pulse-ring" />
+            <span className="absolute inset-0 rounded-full bg-[#FF6B35]/25 pulse-ring" style={{ animationDelay: "0.4s" }} />
+          </>)}
+          <svg className="relative" width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="1" width="6" height="14" rx="3" /><path d="M5 10a7 7 0 0 0 14 0" /><line x1="12" y1="17" x2="12" y2="21" /><line x1="8" y1="21" x2="16" y2="21" /></svg>
+        </button>
+        <span className={`text-[20px] font-bold ${isListening ? "text-[#C2410C]" : "text-[#2B211C]"}`}>{isListening ? "듣고 있어요" : "누르고 말씀하세요"}</span>
+
+        <div className="absolute left-5 bottom-1 flex flex-col items-center gap-1">
+          <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleImageUpload} className="hidden" />
+          <button onClick={() => fileInputRef.current?.click()} disabled={isLoading || isListening} aria-label="사진"
+            className="w-16 h-16 rounded-full bg-white border-2 border-[#D9CCC0] flex items-center justify-center active:scale-95 disabled:opacity-50">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2B211C" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
+          </button>
+          <span className="text-[18px] font-bold text-[#2B211C]">사진</span>
+        </div>
+      </div>
+
+      {/* family call / finish listening */}
+      <div className="px-5 pt-3 pb-5 shrink-0">
+        {isListening ? (
+          <button onClick={() => finishListening(true)} className="w-full h-[68px] rounded-[22px] bg-white border-[3px] border-[#C2410C] flex items-center justify-center gap-3 active:scale-[0.98]">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#C2410C" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+            <span className="text-[26px] font-bold text-[#C2410C]">다 말했어요</span>
+          </button>
+        ) : (
+          <button onClick={onFamilyCall} className="w-full h-[68px] rounded-[22px] bg-[#1F7A47] flex items-center justify-center gap-3 active:scale-[0.98]">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.37 1.9.72 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.35 1.85.59 2.81.72A2 2 0 0 1 22 16.92z" /></svg>
+            <span className="text-[26px] font-bold text-white">{callLabel}</span>
+          </button>
+        )}
+      </div>
     </div>
   );
 }
