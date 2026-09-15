@@ -42,6 +42,7 @@ export default function InterpreterPage({ onClose, initialLang = "en" }: Props) 
   const [error, setError] = useState("");
 
   const recRef = useRef<SR | null>(null);
+  const whoRef = useRef<Who | null>(null); // who is being listened to (ref: timers/callbacks must not read stale state)
   const accRef = useRef("");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -70,7 +71,7 @@ export default function InterpreterPage({ onClose, initialLang = "en" }: Props) 
 
   /* ── listening: tap to start, tap again (or 4s silence after speech) to finish ── */
   function startListening(who: Who) {
-    if (listening) { stopListening(true); return; }
+    if (whoRef.current) { stopListening(true); return; }
     stopAudio();
     const Ctor = typeof window !== "undefined" ? ((window as unknown as { SpeechRecognition?: new () => SR; webkitSpeechRecognition?: new () => SR }).SpeechRecognition || (window as unknown as { webkitSpeechRecognition?: new () => SR }).webkitSpeechRecognition) : undefined;
     if (!Ctor) { setError("이 브라우저는 음성 인식을 지원하지 않아요."); return; }
@@ -92,14 +93,14 @@ export default function InterpreterPage({ onClose, initialLang = "en" }: Props) 
     };
     r.onerror = () => { if (recRef.current === r) stopListening(false); };
     r.onend = () => { if (recRef.current === r) stopListening(true); };
-    r.start(); setListening(who);
+    r.start(); whoRef.current = who; setListening(who);
     arm(12000); // up to 12s to start talking
   }
   function stopListening(send: boolean) {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
     const r = recRef.current; recRef.current = null;
     try { r?.stop(); } catch {}
-    const who = listening; const text = accRef.current.trim(); accRef.current = "";
+    const who = whoRef.current; const text = accRef.current.trim(); accRef.current = ""; whoRef.current = null;
     setListening(null);
     if (send && text && who) translate(text, who); else setLive("");
   }
