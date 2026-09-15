@@ -149,6 +149,12 @@ export default function MessagesPage({ onClose, contacts: contactsProp, initialT
     window.location.href = smsHref(phone, draft.text);
   }
   async function copyDraft() { try { await navigator.clipboard.writeText(draft?.text || ""); setError(""); say("복사했어요. 문자나 카톡에 붙여넣으세요."); } catch {} }
+  // Email: opens Gmail/mail app with the English text filled in — no Google API, no review needed
+  function sendViaEmail() {
+    if (!draft) return;
+    const subject = draft.subject || draft.text.split(/[.!?\n]/)[0].slice(0, 60);
+    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(draft.text)}`;
+  }
 
 
   return (
@@ -253,8 +259,9 @@ export default function MessagesPage({ onClose, contacts: contactsProp, initialT
               문자 앱으로 보내기
             </button>
             <p className="text-center text-[17px] text-[#5C4F48]">문자 앱이 열리면 <b>보내기</b>만 누르세요.</p>
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={copyDraft} className="h-14 rounded-2xl bg-white border-2 border-[#D9CCC0] text-[#2B211C] text-[18px] font-bold">복사 (카톡용)</button>
+            <div className="grid grid-cols-3 gap-2">
+              <button onClick={sendViaEmail} className="h-14 rounded-2xl bg-white border-2 border-[#D9CCC0] text-[#2B211C] text-[18px] font-bold">이메일로</button>
+              <button onClick={copyDraft} className="h-14 rounded-2xl bg-white border-2 border-[#D9CCC0] text-[#2B211C] text-[18px] font-bold">복사 (카톡)</button>
               <button onClick={() => { setDraft(null); setIntent(""); }} className="h-14 rounded-2xl bg-white border-2 border-[#D9CCC0] text-[#2B211C] text-[18px] font-bold">다시 쓰기</button>
             </div>
           </>)}

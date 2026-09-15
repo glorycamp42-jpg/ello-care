@@ -8,8 +8,8 @@
   "share_target": { "action": "/share", "method": "GET", "params": { "title": "title", "text": "text", "url": "url" } },
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#F0F7FF",
-  "theme_color": "#1B6FE8",
+  "background_color": "#FFF8EE",
+  "theme_color": "#FFF8EE",
   "icons": [
     {
       "src": "/icons/icon-192.png",
