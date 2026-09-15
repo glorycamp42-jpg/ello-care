@@ -229,7 +229,62 @@ const TOOLS = [
       required: ["elder_id"],
     },
   },
+
+  /* ── App control: these run ON THE USER'S PHONE. Call them whenever the user asks for the thing. ── */
+  {
+    name: "open_interpreter",
+    description: "Open the face-to-face interpreter screen (통역). Use when the user needs to talk with someone in another language — doctor, pharmacy, office — or says 통역/영어로 말해줘/interpret.",
+    input_schema: { type: "object" as const, properties: { language: { type: "string", enum: ["en", "es", "zh", "vi", "ja"], description: "The other person's language. Default en." } }, required: [] },
+  },
+  {
+    name: "call_family",
+    description: "Place a phone call to a saved family contact (딸, 아들, 며느리, 손자 ... or a name). Use when the user asks to call / 전화해줘 / 연락해줘. Only works for contacts in the saved contacts list given in context.",
+    input_schema: { type: "object" as const, properties: { who: { type: "string", description: "Relation or name as the user said it, e.g. 딸, 아들, 영희" } }, required: ["who"] },
+  },
+  {
+    name: "add_family_contact",
+    description: "Save a family/emergency contact on the phone (name, relation, phone number). Use when the user gives a number to save. Confirm the number back to them digit by digit.",
+    input_schema: { type: "object" as const, properties: { name: { type: "string" }, relation: { type: "string", description: "딸, 아들, 며느리, 손녀, 친구 ..." }, phone: { type: "string", description: "Digits only, e.g. 2135551234" } }, required: ["name", "phone"] },
+  },
+  {
+    name: "add_medication_reminder",
+    description: "Set a daily medication reminder on the phone. Use when the user says which medicine and when to take it (e.g. 혈압약 아침 8시 저녁 6시).",
+    input_schema: { type: "object" as const, properties: { name: { type: "string", description: "Medicine name as the user calls it" }, times: { type: "array", items: { type: "string" }, description: "24h times HH:MM, e.g. [\"08:00\",\"18:00\"]" } }, required: ["name", "times"] },
+  },
+  {
+    name: "remove_medication_reminder",
+    description: "Remove a medication reminder by name (from the medications list in context).",
+    input_schema: { type: "object" as const, properties: { name: { type: "string" } }, required: ["name"] },
+  },
+  {
+    name: "cancel_appointment",
+    description: "Cancel (delete) an upcoming appointment the user mentions, e.g. 내일 병원 취소해줘. Matches by title and optional date.",
+    input_schema: { type: "object" as const, properties: { title: { type: "string", description: "Part of the appointment title, e.g. 병원, 약국" }, date: { type: "string", description: "YYYY-MM-DD if the user said a day (오늘/내일 → compute)" } }, required: ["title"] },
+  },
+  {
+    name: "set_font_size",
+    description: "Change the app's text size. Use when the user says the text is too small/large: 글씨 크게, 더 크게, 작게.",
+    input_schema: { type: "object" as const, properties: { level: { type: "string", enum: ["보통", "크게", "아주 크게"] } }, required: ["level"] },
+  },
+  {
+    name: "open_screen",
+    description: "Open a screen of the app: reminders (일정 보기), health_wallet (건강수첩), medications (약 알림 목록), safety (안심 연락처), settings (설정). Use when the user asks to see/open one of these.",
+    input_schema: { type: "object" as const, properties: { screen: { type: "string", enum: ["reminders", "health_wallet", "medications", "safety", "settings"] } }, required: ["screen"] },
+  },
+  {
+    name: "take_photo",
+    description: "Ask the phone to open the camera so the user can show a document, letter, medicine bottle or a suspicious text message. Use when they want to show you something or check a scam.",
+    input_schema: { type: "object" as const, properties: {}, required: [] },
+  },
+  {
+    name: "repeat_last",
+    description: "Read your previous answer aloud again. Use when the user says 다시 말해줘 / 못 들었어 / 뭐라고.",
+    input_schema: { type: "object" as const, properties: {}, required: [] },
+  },
 ];
+
+/* Tools whose effect happens on the phone: the server just records a client action for the app to run. */
+const CLIENT_TOOLS = new Set(["open_interpreter", "call_family", "add_family_contact", "add_medication_reminder", "remove_medication_reminder", "set_font_size", "open_screen", "take_photo", "repeat_last"]);
 
 /* ── Tool Execution Functions ── */
 
@@ -610,9 +665,32 @@ async function executeTool(name: string, input: Record<string, string>, defaultC
       return executeSaveMemory(elderId, input.category || "other", input.key, input.value);
     case "get_memories":
       return executeGetMemories(input.elder_id || elderId);
+    case "cancel_appointment":
+      return executeCancelAppointment(elderId, input.title, input.date, timezone);
     default:
+      if (CLIENT_TOOLS.has(name)) {
+        // Executed by the phone after the reply. Tell the model it is done so it can confirm naturally.
+        return JSON.stringify({ ok: true, clientAction: { type: name, ...input }, note: "The app will do this right away. Confirm to the user in one short sentence." });
+      }
       return JSON.stringify({ error: `Unknown tool: ${name}` });
   }
+}
+
+async function executeCancelAppointment(elderId: string, title: string, date: string | undefined, timezone: string): Promise<string> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase || elderId === "default") return JSON.stringify({ cancelled: false, reason: "no valid user" });
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  let q = supabase.from("appointments").select("id, title, scheduled_at").eq("elder_id", elderId).eq("status", "upcoming").gte("scheduled_at", today).order("scheduled_at", { ascending: true });
+  if (title) q = q.ilike("title", `%${title}%`);
+  const { data } = await q.limit(10);
+  let rows = (data || []) as { id: string; title: string; scheduled_at: string }[];
+  if (date) rows = rows.filter(r => r.scheduled_at.startsWith(date));
+  if (rows.length === 0) return JSON.stringify({ cancelled: false, reason: "no matching upcoming appointment", hint: "Ask which one; list upcoming with get_appointments." });
+  if (rows.length > 1 && !date) return JSON.stringify({ cancelled: false, reason: "multiple matches", candidates: rows.map(r => ({ title: r.title, when: r.scheduled_at })), hint: "Ask the user which date." });
+  const target = rows[0];
+  const { error } = await supabase.from("appointments").delete().eq("id", target.id);
+  if (error) return JSON.stringify({ cancelled: false, error: error.message });
+  return JSON.stringify({ cancelled: true, title: target.title, when: target.scheduled_at });
 }
 
 /* ── Appointment Parser ── */
@@ -1071,6 +1149,15 @@ export async function POST(req: NextRequest) {
     const langPrompt: string = body.langPrompt || "You MUST respond ONLY in Korean.";
     const charName: string = body.charName || "엘로";
     const userCity: string = body.userCity || "Los Angeles";
+    // What is on the phone right now (contacts / medication reminders / font size) so the assistant can act on it.
+    const cc = body.clientContext || {};
+    const contactsList: string = Array.isArray(cc.contacts) && cc.contacts.length
+      ? cc.contacts.map((c: { name: string; relation?: string }) => `${c.relation ? c.relation + " " : ""}${c.name}`).join(", ")
+      : "(none saved yet)";
+    const medsList: string = Array.isArray(cc.medications) && cc.medications.length
+      ? cc.medications.map((m: { name: string; times: string[] }) => `${m.name} at ${(m.times || []).join(", ")}`).join("; ")
+      : "(no medication reminders set)";
+    const fontLevel: string = cc.fontSize || "보통";
 
     const personaPrompt = PERSONA_PROMPTS[personaId] || PERSONA_PROMPTS.assistant;
     const timezone: string = body.timezone || "America/Los_Angeles";
@@ -1168,6 +1255,24 @@ The user is located in: ${userCity}. When they ask about weather or nearby place
 
 The user's ID is: ${elderId}. When using get_appointments or get_memories tools, pass this as elder_id.
 
+WHAT IS ON THE USER'S PHONE RIGHT NOW:
+- Saved family contacts: ${contactsList}
+- Medication reminders: ${medsList}
+- Text size: ${fontLevel}
+
+YOU OPERATE THE APP. The user should never need to find a button — when they ask for any of these, call the tool and confirm in one sentence:
+- 통역 / talk to a doctor or clerk in English etc. → open_interpreter
+- 전화해줘 / 연락해줘 → call_family (only saved contacts; if none, offer to save one and ask for the number)
+- "딸 번호 저장해" + digits → add_family_contact (repeat the number back)
+- "혈압약 아침 8시" → add_medication_reminder; "약 알림 지워" → remove_medication_reminder
+- "병원 취소" → cancel_appointment (ask which one if several)
+- 글씨 크게/작게 → set_font_size
+- 일정 보여줘 / 건강수첩 / 약 목록 / 연락처 / 설정 → open_screen
+- 사진 봐줘 / 문자 사기인지 / 처방전 읽어줘 → take_photo
+- 다시 말해줘 / 못 들었어 → repeat_last
+- 뭐 할 수 있어? → explain, in 2 sentences, that you keep their schedule and medicines, call family, interpret, read photos, and remember what they tell you.
+- "약 언제 먹지?" → answer from the medication reminders above and the health context; never invent.
+
 ${memorySummary ? `WHAT YOU KNOW ABOUT THIS USER (from previous conversations):
 ${memorySummary}
 Use this information naturally in conversation. Reference their family, health, hobbies warmly. Don't list what you know — weave it into conversation naturally.` : "You don't have saved memories for this user yet. Use save_memory tool when they share personal details."}
@@ -1228,6 +1333,7 @@ When answering health questions, use this data naturally. For example if asked "
     let attempts = 0;
     const MAX_TOOL_ROUNDS = 3;
     let reminderSavedViaTool = false;
+    const clientActions: Record<string, unknown>[] = [];
 
     while (attempts < MAX_TOOL_ROUNDS) {
       attempts++;
@@ -1276,6 +1382,7 @@ When answering health questions, use this data naturally. For example if asked "
           console.log(`[chat] Tool call: ${tool.name}(${JSON.stringify(tool.input)})`);
           const result = await executeTool(tool.name, tool.input, userCity, elderId, timezone);
           if (tool.name === "set_reminder") { try { if (JSON.parse(result).saved) reminderSavedViaTool = true; } catch { /* ignore */ } }
+          if (CLIENT_TOOLS.has(tool.name)) { try { const parsed = JSON.parse(result); if (parsed.clientAction) clientActions.push(parsed.clientAction); } catch { /* ignore */ } }
           console.log(`[chat] Tool result: ${result.slice(0, 100)}...`);
           toolResults.push({
             type: "tool_result" as const,
@@ -1395,6 +1502,7 @@ AI응답: ${rawText}`,
                   triggerMoodSync(elderId, timezone).catch(e => console.error('[mood-sync] error:', e));
                   return NextResponse.json({
                     text,
+                    actions: clientActions,
                     appointmentSaved: extractSaved,
                     _debug: { elderId, viaExtraction: true, timezone, today: todayLocal(timezone), ticketChat: tChat, ticketAppointment: tApt },
                   });
@@ -1416,7 +1524,7 @@ AI응답: ${rawText}`,
 
     if (isGreeting) {
       // Greeting is app-initiated: don't store it, don't grant tickets, don't mood-sync
-      return NextResponse.json({ text, appointmentSaved: false, _debug: { elderId, greeting: true } });
+      return NextResponse.json({ text, appointmentSaved: false, actions: clientActions, _debug: { elderId, greeting: true } });
     }
 
     // Save conversation to DB
@@ -1443,6 +1551,7 @@ AI응답: ${rawText}`,
 
     return NextResponse.json({
       text,
+      actions: clientActions,
       appointmentSaved: didSave,
       _debug: {
         elderId,

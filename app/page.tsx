@@ -5,13 +5,13 @@ import CharacterAvatar from "@/components/CharacterAvatar";
 import RemindersPage from "@/components/RemindersPage";
 import SafetyPage, { findContactByKeyword, FamilyContact } from "@/components/SafetyPage";
 import HealthWalletPage from "@/components/HealthWalletPage";
-import MedicationPage, { loadMeds } from "@/components/MedicationPage";
+import MedicationPage, { loadMeds, saveMeds } from "@/components/MedicationPage";
 import SettingsPage from "@/components/SettingsPage";
 import InterpreterPage from "@/components/InterpreterPage";
 import { createClient } from "@/lib/supabase/client";
 import { startGPSTracking, stopGPSTracking } from "@/lib/gps-tracker";
 import { getSavedLang } from "@/lib/i18n";
-import { ELLO, ELLO_GREETING, FONT_STEPS, applyFontScale, loadFontIdx } from "@/lib/ello";
+import { ELLO, ELLO_GREETING, FONT_STEPS, FONT_LABELS, applyFontScale, loadFontIdx, saveFontIdx } from "@/lib/ello";
 
 /* ── Web Speech API types ── */
 declare global {
@@ -53,6 +53,18 @@ function detectTargetLang(text: string): string {
 function loadContacts(): FamilyContact[] {
   try { const raw = localStorage.getItem("ello-family-contacts"); return raw ? JSON.parse(raw) : []; } catch { return []; }
 }
+function saveContacts(list: FamilyContact[]) {
+  try { localStorage.setItem("ello-family-contacts", JSON.stringify(list)); } catch {}
+}
+/* What the phone knows — sent with every message so 엘로 can act on it */
+function buildClientContext() {
+  return {
+    contacts: loadContacts().map(c => ({ name: c.name, relation: c.relation })),
+    medications: loadMeds().filter(m => m.enabled).map(m => ({ name: m.name, times: m.times })),
+    fontSize: FONT_LABELS[loadFontIdx()],
+  };
+}
+type ClientAction = { type: string } & Record<string, unknown>;
 function todayLocalISO(): string {
   return new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 }
@@ -76,6 +88,7 @@ export default function Home() {
   const [appointmentToast, setAppointmentToast] = useState(false);
   const [textInputOn, setTextInputOn] = useState(false);
   const [bigFont, setBigFont] = useState(false);
+  const [photoHint, setPhotoHint] = useState(false); // 엘로 asked the user to take a photo → pulse the 사진 button
 
   const [showSettings, setShowSettings] = useState(false);
   const [showReminders, setShowReminders] = useState(false);
@@ -205,7 +218,7 @@ export default function Home() {
     try {
       const res = await fetch("/api/chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: [{ role: "user", content: "안녕" }], persona: ELLO.id, langPrompt: lang.systemPrompt, charName: ELLO.name, userId, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, greetingMode: true }),
+        body: JSON.stringify({ messages: [{ role: "user", content: "안녕" }], persona: ELLO.id, langPrompt: lang.systemPrompt, charName: ELLO.name, userId, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, greetingMode: true, clientContext: buildClientContext() }),
       });
       const data = await res.json();
       if (data.text && !data.error && data.text.length > 5) return data.text;
@@ -281,19 +294,91 @@ export default function Home() {
     try {
       const res = await fetch("/api/chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: newMsgs, persona: ELLO.id, langPrompt: lang.systemPrompt, charName: ELLO.name, userCity, userId, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
+        body: JSON.stringify({ messages: newMsgs, persona: ELLO.id, langPrompt: lang.systemPrompt, charName: ELLO.name, userCity, userId, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, clientContext: buildClientContext() }),
       });
       if (res.status === 401) { window.location.href = "/login"; return; }
       const data = await res.json();
       const reply = data.error ? "죄송해요, 잠시 문제가 있었어요. 다시 말씀해 주세요." : data.text;
-      if (data.appointmentSaved) { setAppointmentToast(true); setTimeout(() => setAppointmentToast(false), 3000); loadToday(); }
-      setMessages([...newMsgs, { role: "assistant", content: reply }]);
-      setLastAssistantText(reply);
-      if (!data.error) playTTS(reply);
+      if (data.appointmentSaved) { setAppointmentToast(true); setTimeout(() => setAppointmentToast(false), 3000); }
+      const actions: ClientAction[] = Array.isArray(data.actions) ? data.actions : [];
+      const wantsRepeat = actions.some(a => a.type === "repeat_last") && !!lastAssistantText;
+      if (wantsRepeat) {
+        // "다시 말해줘": read the previous answer again instead of a new sentence
+        setMessages([...newMsgs, { role: "assistant", content: lastAssistantText }]);
+        playTTS(lastAssistantText);
+      } else {
+        setMessages([...newMsgs, { role: "assistant", content: reply }]);
+        setLastAssistantText(reply);
+        if (!data.error) playTTS(reply);
+      }
+      loadToday(); // appointments may have been added/cancelled, meds may change below
+      for (const a of actions) runAction(a);
     } catch {
       const reply = "연결에 문제가 있어요. 잠시 후 다시 말씀해 주세요.";
       setMessages([...newMsgs, { role: "assistant", content: reply }]); setLastAssistantText(reply);
     } finally { setIsLoading(false); }
+  }
+
+  /* ── 엘로 operates the app: actions decided by the model, executed here ── */
+  function runAction(a: ClientAction) {
+    switch (a.type) {
+      case "open_interpreter":
+        setShowInterpreter(typeof a.language === "string" && a.language ? a.language : "en");
+        break;
+      case "call_family": {
+        const who = String(a.who || "");
+        const c = findContactByKeyword(who) || (contacts.length === 1 ? contacts[0] : null);
+        if (c) setTimeout(() => { window.location.href = `tel:${c.phone}`; }, 800); // let the confirmation start playing first
+        break;
+      }
+      case "add_family_contact": {
+        const phone = String(a.phone || "").replace(/[^\d+]/g, "");
+        if (!phone) break;
+        const list = loadContacts();
+        const relation = String(a.relation || ""); const name = String(a.name || relation || "가족");
+        const existing = list.findIndex(x => x.phone.replace(/[^\d]/g, "") === phone.replace(/[^\d]/g, ""));
+        const entry: FamilyContact = { id: existing >= 0 ? list[existing].id : `c_${Date.now()}`, name, relation, phone };
+        if (existing >= 0) list[existing] = entry; else list.push(entry);
+        saveContacts(list); setContacts(list);
+        break;
+      }
+      case "add_medication_reminder": {
+        const name = String(a.name || "").trim();
+        const times = (Array.isArray(a.times) ? a.times : []).map(String).filter(t => /^\d{2}:\d{2}$/.test(t));
+        if (!name || times.length === 0) break;
+        const meds = loadMeds();
+        const i = meds.findIndex(m => m.name === name);
+        if (i >= 0) meds[i] = { ...meds[i], times: Array.from(new Set([...meds[i].times, ...times])).sort(), enabled: true };
+        else meds.push({ id: `m_${Date.now()}`, name, times: times.sort(), enabled: true });
+        saveMeds(meds); loadToday();
+        break;
+      }
+      case "remove_medication_reminder": {
+        const name = String(a.name || "").trim();
+        if (!name) break;
+        saveMeds(loadMeds().filter(m => !m.name.includes(name) && !name.includes(m.name))); loadToday();
+        break;
+      }
+      case "set_font_size": {
+        const idx = Math.max(0, (FONT_LABELS as readonly string[]).indexOf(String(a.level || "보통")));
+        applyFontScale(FONT_STEPS[idx]); saveFontIdx(idx); setBigFont(idx > 0);
+        break;
+      }
+      case "open_screen": {
+        const map: Record<string, () => void> = {
+          reminders: () => setShowReminders(true), health_wallet: () => setShowHealthWallet(true),
+          medications: () => setShowMedications(true), safety: () => setShowSafety(true), settings: () => setShowSettings(true),
+        };
+        const open = map[String(a.screen || "")]; if (open) setTimeout(open, 600);
+        break;
+      }
+      case "take_photo":
+        setPhotoHint(true); setTimeout(() => setPhotoHint(false), 8000);
+        try { fileInputRef.current?.click(); } catch {} // may be blocked without a gesture → the pulsing 사진 button is the fallback
+        break;
+      case "repeat_last":
+        break; // handled inline in sendMessage
+    }
   }
 
   /* ── photo → chat (documents, letters, suspicious texts) ── */
@@ -324,7 +409,7 @@ export default function Home() {
       setMessages(newMsgs); setIsLoading(true);
       const res = await fetch("/api/chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ persona: ELLO.id, langPrompt: lang.systemPrompt, charName: ELLO.name, userCity, userId, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        body: JSON.stringify({ persona: ELLO.id, langPrompt: lang.systemPrompt, charName: ELLO.name, userCity, userId, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, clientContext: buildClientContext(),
           messages: newMsgs.map(m => ({ role: m.role, content: m.content, ...(m.image ? { image: { base64: m.image.base64, mediaType: m.image.mediaType } } : {}) })) }),
       });
       const data = await res.json();
@@ -498,8 +583,8 @@ export default function Home() {
 
         <div className="absolute left-5 bottom-1 flex flex-col items-center gap-1">
           <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleImageUpload} className="hidden" />
-          <button onClick={() => fileInputRef.current?.click()} disabled={isLoading || isListening} aria-label="사진"
-            className="w-16 h-16 rounded-full bg-white border-2 border-[#D9CCC0] flex items-center justify-center active:scale-95 disabled:opacity-50">
+          <button onClick={() => { setPhotoHint(false); fileInputRef.current?.click(); }} disabled={isLoading || isListening} aria-label="사진"
+            className={`w-16 h-16 rounded-full flex items-center justify-center active:scale-95 disabled:opacity-50 ${photoHint ? "bg-[#FFE6D9] border-[3px] border-[#FF6B35] animate-pulse" : "bg-white border-2 border-[#D9CCC0]"}`}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2B211C" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
           </button>
           <span className="text-[18px] font-bold text-[#2B211C]">사진</span>
