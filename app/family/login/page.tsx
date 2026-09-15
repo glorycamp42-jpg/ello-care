@@ -1,13 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
 
 const supabase = createClient();
 
-export default function FamilyLogin() {
+function FamilyLoginInner() {
   const [email, setEmail] = useState("");
+  const nextPath = useSearchParams().get("next") || "";
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -30,7 +32,7 @@ export default function FamilyLogin() {
     if (role === "elder") {
       window.location.href = "/";
     } else {
-      window.location.href = "/family";
+      window.location.href = nextPath.startsWith("/family/") ? nextPath : "/family";
     }
   }
 
@@ -100,4 +102,8 @@ export default function FamilyLogin() {
       </div>
     </div>
   );
+}
+
+export default function FamilyLogin() {
+  return <Suspense fallback={null}><FamilyLoginInner /></Suspense>;
 }

@@ -18,7 +18,9 @@ export async function middleware(request: NextRequest) {
 
   if (!user) {
     if (pathname.startsWith("/family")) {
-      return NextResponse.redirect(new URL("/family/login", request.url));
+      const url = new URL("/family/login", request.url);
+      if (pathname !== "/family") url.searchParams.set("next", pathname);
+      return NextResponse.redirect(url);
     }
     return NextResponse.redirect(new URL("/login", request.url));
   }

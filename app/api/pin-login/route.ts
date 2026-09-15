@@ -52,6 +52,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'PIN 번호를 입력해주세요' }, { status: 400 })
     }
 
+    // 0. 가족이 발급한 PIN (ello-care elder_pins) 먼저 확인
+    const { data: famPin } = await elloAdmin.from('elder_pins').select('elder_id').eq('pin', pin).maybeSingle()
+    if (famPin?.elder_id) {
+      const { data: elderUser } = await elloAdmin.auth.admin.getUserById(famPin.elder_id)
+      const email = elderUser?.user?.email
+      if (!email) return NextResponse.json({ error: '계정을 찾을 수 없어요' }, { status: 404 })
+      const { data: linkData, error: genError } = await elloAdmin.auth.admin.generateLink({ type: 'magiclink', email })
+      if (genError || !linkData) return NextResponse.json({ error: '로그인 처리 중 오류가 발생했습니다' }, { status: 500 })
+      return NextResponse.json({ success: true, email, token: linkData.properties?.email_otp, name: elderUser?.user?.user_metadata?.name || '어르신', userId: famPin.elder_id })
+    }
+
     // 1. TotalMedix DB에서 PIN으로 participant_ello_link 조회
     const { data: link, error: linkError } = await totalmedixAdmin
       .from('participant_ello_link')

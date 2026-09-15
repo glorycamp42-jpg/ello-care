@@ -1,18 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signUp } from "@/lib/supabase";
 import Link from "next/link";
 
-export default function FamilySignup() {
+function FamilySignupInner() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [confirmSent, setConfirmSent] = useState(false);
   const router = useRouter();
+  const nextPath = useSearchParams().get("next") || "/family";
 
   async function handleSignup(e: React.FormEvent) {
     e.preventDefault();
@@ -20,13 +22,25 @@ export default function FamilySignup() {
     if (password.length < 6) { setError("비밀번호는 6자 이상이어야 합니다"); return; }
     setLoading(true);
     try {
-      await signUp(email, password, { name, role: "family", phone });
-      router.push("/family");
+      const data = await signUp(email, password, { name, role: "family", phone });
+      if (!data.session) { setConfirmSent(true); return; } // email confirmation is on → tell them what to do next
+      router.push(nextPath.startsWith("/") ? nextPath : "/family");
     } catch (err: unknown) {
       setError((err as Error).message || "회원가입에 실패했습니다");
     } finally {
       setLoading(false);
     }
+  }
+
+  if (confirmSent) {
+    return (
+      <div className="min-h-dvh bg-[#F0F7FF] flex flex-col items-center justify-center px-6">
+        <div className="w-full max-w-sm bg-white rounded-2xl p-6 text-center shadow-sm">
+          <p className="text-[20px] font-bold text-gray-900">이메일을 확인해 주세요</p>
+          <p className="text-[15px] text-gray-600 mt-2 leading-relaxed"><b>{email}</b>로 확인 링크를 보냈어요. 링크를 누르면 로그인되고, 가족 홈에서 <b>&ldquo;부모님 폰 설정하기&rdquo;</b>를 누르시면 됩니다.</p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -81,4 +95,9 @@ export default function FamilySignup() {
       </div>
     </div>
   );
+}
+
+import { Suspense } from "react";
+export default function FamilySignup() {
+  return <Suspense fallback={null}><FamilySignupInner /></Suspense>;
 }

@@ -88,6 +88,7 @@ export default function Home() {
   const [appointmentToast, setAppointmentToast] = useState(false);
   const [textInputOn, setTextInputOn] = useState(false);
   const [bigFont, setBigFont] = useState(false);
+  const [careMode, setCareMode] = useState(false); // set up by family / ADHC → big font, location sharing, family button always shown
   const [photoHint, setPhotoHint] = useState(false); // 엘로 asked the user to take a photo → pulse the 사진 button
 
   const [showSettings, setShowSettings] = useState(false);
@@ -122,8 +123,25 @@ export default function Home() {
       const { data: { session } } = await sb.auth.getSession();
       const user = session?.user || (await sb.auth.getUser()).data.user;
       if (user?.id) {
+        const meta = (user.user_metadata || {}) as Record<string, unknown>;
+        const source = String(meta.source || "");
+        if (meta.role === "family") { window.location.href = "/family"; return; } // family accounts live in the family app
+        // self sign-ups go through the 1-minute voice onboarding once
+        if (!meta.onboarded && source !== "totalmedix_pin" && source !== "family_setup") { window.location.href = "/onboarding"; return; }
+        const care = meta.mode === "care" || source === "totalmedix_pin" || source === "family_setup";
+        setCareMode(care);
+        // first run on this phone: care mode starts with big text; seed contacts/meds the family entered
+        try {
+          const seededKey = `ello-seeded-${user.id}`;
+          if (!localStorage.getItem(seededKey)) {
+            if (care && !localStorage.getItem("ello-font-scale")) { localStorage.setItem("ello-font-scale", String(FONT_STEPS[1])); applyFontScale(FONT_STEPS[1]); setBigFont(true); }
+            if (Array.isArray(meta.contacts) && meta.contacts.length && loadContacts().length === 0) { saveContacts(meta.contacts as FamilyContact[]); setContacts(meta.contacts as FamilyContact[]); }
+            if (Array.isArray(meta.medications) && meta.medications.length && loadMeds().length === 0) saveMeds(meta.medications as ReturnType<typeof loadMeds>);
+            localStorage.setItem(seededKey, "1");
+          }
+        } catch {}
         setUserId(user.id);
-        const n = user.user_metadata?.name || user.user_metadata?.full_name;
+        const n = meta.name || meta.full_name;
         if (n) setUserName(`${n} 님`);
         return;
       }
@@ -157,10 +175,10 @@ export default function Home() {
 
   /* ── GPS sharing for the family app ── */
   useEffect(() => {
-    if (userId === "default") return;
+    if (userId === "default" || !careMode) return; // location sharing is for family-set-up (care) accounts
     startGPSTracking(userId);
     return () => stopGPSTracking();
-  }, [userId]);
+  }, [userId, careMode]);
 
   /* ── today card: appointments (DB) + medication times (device) ── */
   async function loadToday() {
@@ -472,6 +490,7 @@ export default function Home() {
   /* ── family call ── */
   const primary = contacts[0];
   const callLabel = primary ? `${primary.relation || primary.name}에게 전화` : "가족 연락처 등록";
+  const showCallButton = careMode || !!primary; // assistant mode: appears once a contact is saved ("딸 번호 저장해줘")
   function onFamilyCall() {
     if (primary) window.location.href = `tel:${primary.phone}`;
     else setShowSafety(true);
@@ -606,12 +625,12 @@ export default function Home() {
             <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#C2410C" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
             <span className="text-[26px] font-bold text-[#C2410C]">다 말했어요</span>
           </button>
-        ) : (
+        ) : showCallButton ? (
           <button onClick={onFamilyCall} className="w-full h-[68px] rounded-[22px] bg-[#1F7A47] flex items-center justify-center gap-3 active:scale-[0.98]">
             <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.37 1.9.72 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.35 1.85.59 2.81.72A2 2 0 0 1 22 16.92z" /></svg>
             <span className="text-[26px] font-bold text-white">{callLabel}</span>
           </button>
-        )}
+        ) : null}
       </div>
     </div>
   );

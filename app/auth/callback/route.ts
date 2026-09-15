@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
 
   if (error || !data.session) {
     console.error("[auth/callback] Error:", error?.message);
-    return NextResponse.redirect(`${origin}/login`);
+    return NextResponse.redirect(`${origin}/login?error=link`);
   }
 
   // Check role for redirect
