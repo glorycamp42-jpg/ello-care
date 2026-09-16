@@ -27,7 +27,9 @@ export async function listLinks(db: ReturnType<typeof admin>, me: string) {
   return {
     watching: watching.map(r => ({ id: r.id, userId: r.elder_id, name: nm[r.elder_id] || "", relationship: r.relationship || "",
       share_wellbeing: r.share_wellbeing, share_meds: r.share_meds, share_appointments: r.share_appointments, share_location: r.share_location })),
-    watchers: watchers.map(r => ({ id: r.id, userId: r.family_id, name: nm[r.family_id] || "", relationship: r.relationship || "",
+    // for people who see me, show who THEY are to me (from the reverse row), not who I am to them
+    watchers: watchers.map(r => ({ id: r.id, userId: r.family_id, name: nm[r.family_id] || "",
+      relationship: watching.find(w => w.elder_id === r.family_id)?.relationship || "",
       share_wellbeing: r.share_wellbeing, share_meds: r.share_meds, share_appointments: r.share_appointments, share_location: r.share_location })),
   };
 }

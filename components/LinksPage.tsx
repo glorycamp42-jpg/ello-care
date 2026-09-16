@@ -15,7 +15,11 @@ const REL_CHIPS = ["딸", "아들", "어머니", "아버지", "남편", "아내"
 const BTN = "h-16 rounded-[20px] text-[22px] font-bold active:scale-[0.98] disabled:opacity-60";
 
 function fmtT(iso: string) { try { return new Intl.DateTimeFormat("ko-KR", { hour: "numeric", minute: "2-digit", hour12: true }).format(new Date(iso)); } catch { return ""; } }
-function fmtD(iso: string) { try { return new Intl.DateTimeFormat("ko-KR", { month: "numeric", day: "numeric", weekday: "short", hour: "numeric", minute: "2-digit", hour12: true }).format(new Date(iso)); } catch { return ""; } }
+function fmtD(iso: string) { // appointments keep wall-clock time in the string — do not convert
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/); if (!m) return String(iso);
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])); const h = Number(m[4]);
+  return `${Number(m[2])}월 ${Number(m[3])}일(${["일", "월", "화", "수", "목", "금", "토"][d.getDay()]}) ${h < 12 ? "오전" : "오후"} ${h % 12 === 0 ? 12 : h % 12}:${m[5]}`;
+}
 function fmtHHMM(t: string) { const [h, m] = t.split(":").map(Number); return `${h < 12 ? "오전" : "오후"} ${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")}`; }
 
 // module scope (not inside render) so inputs keep focus across re-renders

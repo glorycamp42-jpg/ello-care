@@ -43,14 +43,22 @@ export async function syncMedsFromServer(userId?: string): Promise<Medication[] 
   let rows = await fetchRows(userId);
   if (!rows) return null; // offline → keep cache
   if (rows.length === 0 && !userId) {
-    const local = loadMeds().filter(m => m.name && m.times.length);
+    // upload the phone's legacy reminders once — but only if they were saved by this same account
+    let owner = "";
+    try { owner = localStorage.getItem("ello-meds-owner") || ""; } catch {}
+    let me = "";
+    try { me = localStorage.getItem("ello-userId") || ""; } catch {}
+    const local = (!owner || owner === me) ? loadMeds().filter(m => m.name && m.times.length) : [];
     if (local.length) {
       for (const m of local) await addMedOnServer({ name: m.name, times: m.times, enabled: m.enabled });
       rows = (await fetchRows()) || [];
     }
   }
   const meds = rows.map(rowToMed);
-  if (!userId) saveMeds(meds);
+  if (!userId) {
+    saveMeds(meds);
+    try { const me = localStorage.getItem("ello-userId"); if (me) localStorage.setItem("ello-meds-owner", me); } catch {}
+  }
   return meds;
 }
 

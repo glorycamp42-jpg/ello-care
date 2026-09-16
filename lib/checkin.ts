@@ -36,7 +36,7 @@ export async function buildCheckin(viewerId: string, targetId: string, tz = "Ame
   const { data: u } = await db.from("users").select("full_name").eq("id", targetId).maybeSingle();
   const out: Checkin = { userId: targetId, name: u?.full_name || "", relationship: link?.relationship || "", shared };
   const today = dayStr(tz);
-  const dayStartIso = new Date(`${today}T00:00:00`).toISOString(); // approximate: server TZ; fine for "today-ish" counts
+  const dayStartIso = `${today}T00:00:00`; // scheduled_at holds the elder's wall-clock time; compare as text
 
   if (shared.wellbeing) {
     const { data: convos } = await db.from("conversations").select("role, content, created_at").eq("elder_id", targetId)
@@ -103,7 +103,15 @@ export async function buildCheckin(viewerId: string, targetId: string, tz = "Ame
 export function checkinToText(c: Checkin, tz = "America/Los_Angeles"): string {
   const who = `${c.relationship ? c.relationship + " " : ""}${c.name || ""}`.trim() || "그분";
   const fmtT = (iso: string) => new Intl.DateTimeFormat("ko-KR", { timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true }).format(new Date(iso));
-  const fmtD = (iso: string) => new Intl.DateTimeFormat("ko-KR", { timeZone: tz, month: "numeric", day: "numeric", weekday: "short", hour: "numeric", minute: "2-digit", hour12: true }).format(new Date(iso));
+  // appointments.scheduled_at is stored as the elder's wall-clock time (no real timezone) → read the digits, never convert
+  const fmtD = (iso: string) => {
+    const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+    if (!m) return String(iso);
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    const h = Number(m[4]), min = m[5];
+    const wd = ["일", "월", "화", "수", "목", "금", "토"][d.getDay()];
+    return `${Number(m[2])}월 ${Number(m[3])}일(${wd}) ${h < 12 ? "오전" : "오후"} ${h % 12 === 0 ? 12 : h % 12}:${min}`;
+  };
   const lines: string[] = [`${who}:`];
   if (c.sos) lines.push(`!! 긴급(SOS) 알림이 ${fmtT(c.sos.at)}부터 해제되지 않음 — 먼저 전화하라고 권할 것`);
   if (c.wellbeing) lines.push(`안부: 오늘 엘로와 대화 ${c.wellbeing.talkedToday}번${c.wellbeing.lastTalkAt ? `, 마지막 ${fmtT(c.wellbeing.lastTalkAt)}` : ""}. ${c.wellbeing.summary}`);

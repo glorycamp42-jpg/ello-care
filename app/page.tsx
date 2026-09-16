@@ -135,6 +135,16 @@ export default function Home() {
         if (!meta.onboarded && source !== "totalmedix_pin" && source !== "family_setup") { window.location.href = "/onboarding"; return; }
         const care = meta.mode === "care" || source === "totalmedix_pin" || source === "family_setup";
         setCareMode(care);
+        // A different person logged in on this phone (family testing, shared phone): drop the previous person's
+        // local caches so their medications/contacts are never shown or uploaded under the new account.
+        try {
+          const prevUid = localStorage.getItem("ello-userId");
+          if (prevUid && prevUid !== user.id) {
+            for (const k of ["ello-medications", "ello-med-log", "ello-med-ack", "ello-med-snooze", "ello-family-contacts", "ello-user-location"]) localStorage.removeItem(k);
+            setContacts([]);
+          }
+          localStorage.setItem("ello-userId", user.id);
+        } catch {}
         // first run on this phone: care mode starts with big text; seed contacts/meds the family entered
         try {
           const seededKey = `ello-seeded-${user.id}`;

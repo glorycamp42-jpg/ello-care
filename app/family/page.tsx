@@ -114,20 +114,19 @@ export default function FamilyHome() {
     return `${Math.floor(h / 24)}일 전`;
   }
 
+  // scheduled_at is the elder's wall-clock time stored as text — read the digits, never convert timezones
   function formatDate(iso: string): string {
-    try {
-      const d = new Date(iso);
-      if (isNaN(d.getTime())) return iso;
-      return d.toLocaleDateString("ko-KR", { month: "short", day: "numeric", weekday: "short" });
-    } catch { return iso; }
+    const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return iso;
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    return `${Number(m[2])}월 ${Number(m[3])}일 (${["일", "월", "화", "수", "목", "금", "토"][d.getDay()]})`;
   }
 
   function formatTime(iso: string): string {
-    try {
-      const d = new Date(iso);
-      if (isNaN(d.getTime())) return "";
-      return d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
-    } catch { return ""; }
+    const m = String(iso || "").match(/[T ](\d{2}):(\d{2})/);
+    if (!m) return "";
+    const h = Number(m[1]);
+    return `${h < 12 ? "오전" : "오후"} ${String(h % 12 === 0 ? 12 : h % 12).padStart(2, "0")}:${m[2]}`;
   }
 
   if (loading) {

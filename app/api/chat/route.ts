@@ -161,7 +161,7 @@ const TOOLS = [
   },
   {
     name: "set_reminder",
-    description: "IMPORTANT: You MUST use this tool whenever the user mentions ANY appointment, reservation, hospital visit, pharmacy visit, ADHC, doctor, medicine schedule, or scheduled event. Always call this tool FIRST before responding. Do not just acknowledge — actually save it.",
+    description: "Save a NEW appointment the user is telling you about (병원 예약 잡았어, 내일 2시 약국 가야 해, 다음주 월요일 ADHC). Do NOT use it when the user is ASKING about their schedule (내일 병원 몇 시야? 이번 주 일정 뭐야?) — use get_appointments for questions. Do not use it for medication times (use add_medication_reminder).",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -477,6 +477,14 @@ async function executeSetReminder(date: string, time: string, content: string, e
       source: "ello_ai",
       status: "upcoming",
     };
+
+    // Dedupe: the same day already has an upcoming appointment of the same kind / similar title → do not save twice
+    // (asking "내일 병원 몇 시야?" must never create a second 병원 row)
+    const dup = await appointmentExists(supabase, elderId, scheduledAt, type, content);
+    if (dup) {
+      console.log("[tool:reminder] duplicate of existing appointment, not inserting:", dup.id);
+      return JSON.stringify({ saved: false, alreadyExists: true, existing: { title: dup.title, scheduled_at: dup.scheduled_at }, note: "This appointment is already saved. Just tell the user when it is; do not say you saved it." });
+    }
 
     console.log("[tool:reminder] Inserting to appointments:", JSON.stringify(row));
     const { data, error } = await supabase.from("appointments").insert(row).select();
@@ -857,6 +865,16 @@ function parseAppointments(text: string): { cleanText: string; appointments: Par
 }
 
 // Normalize scheduled_at: fix Korean time expressions and ensure LA timezone
+/** True if an upcoming appointment of the same kind (or similar title) already exists on that day — never save the same visit twice. */
+async function appointmentExists(supabase: SupabaseClient, elderId: string, day: string, type: string, title: string): Promise<{ id: string; title: string; scheduled_at: string } | null> {
+  const { data } = await supabase.from("appointments").select("id, title, type, scheduled_at")
+    .eq("elder_id", elderId).eq("status", "upcoming").gte("scheduled_at", `${day}T00:00:00`).lte("scheduled_at", `${day}T23:59:59`);
+  const norm = (t: string) => String(t || "").replace(/\s+/g, "").toLowerCase();
+  const hit = (data || []).find((a: { title: string; type: string }) =>
+    (type !== "other" && a.type === type) || (norm(title) && (norm(a.title).includes(norm(title)) || norm(title).includes(norm(a.title)))));
+  return hit ? { id: hit.id, title: hit.title, scheduled_at: hit.scheduled_at } : null;
+}
+
 async function saveAppointments(appointments: ParsedAppointment[], elderId: string): Promise<boolean> {
   if (elderId === "default") {
     console.error("[appointment] elder_id is default - skipping save");
@@ -887,6 +905,8 @@ async function saveAppointments(appointments: ParsedAppointment[], elderId: stri
       source: "ello_ai",
       status: "upcoming",
     };
+    const dupe = await appointmentExists(supabase, elderId, cleanTime.slice(0, 10), row.type, row.title);
+    if (dupe) { console.log("[appointment] already saved, skipping:", dupe.id); saved = true; continue; }
     console.log("[appointment] insert attempt:", JSON.stringify(row));
     const { data, error } = await supabase.from("appointments").insert(row).select();
     console.log("[appointment] insert result:", JSON.stringify({ data: data?.length ? data[0] : null, error: error ? { message: error.message, code: error.code } : null }));
