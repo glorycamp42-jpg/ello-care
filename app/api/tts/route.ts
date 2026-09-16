@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCaller } from "@/lib/api-auth";
+import { naturalizeKoreanForTts } from "@/lib/tts-text";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Strip emojis and UI labels before sending to TTS
-    const text = rawText
+    const text = naturalizeKoreanForTts(String(rawText || ""))
       .replace(/[\u{1F000}-\u{1FFFF}|\u{2600}-\u{27FF}|\u{2300}-\u{23FF}|\u{FE00}-\u{FEFF}|\u{1F900}-\u{1F9FF}]/gu, "")
       .replace(/\b(기쁨|대화|슬픔|화남|놀람)\b/g, "")
       .replace(/\s{2,}/g, " ")
