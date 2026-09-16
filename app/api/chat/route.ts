@@ -248,12 +248,12 @@ const TOOLS = [
   },
   {
     name: "add_medication_reminder",
-    description: "Set a daily medication reminder on the phone. Use when the user says which medicine and when to take it (e.g. 혈압약 아침 8시 저녁 6시).",
+    description: "Set a daily medication reminder (saved to the user's health wallet, shared with family). Use when the user says which medicine and when to take it (e.g. 혈압약 아침 8시 저녁 6시).",
     input_schema: { type: "object" as const, properties: { name: { type: "string", description: "Medicine name as the user calls it" }, times: { type: "array", items: { type: "string" }, description: "24h times HH:MM, e.g. [\"08:00\",\"18:00\"]" } }, required: ["name", "times"] },
   },
   {
     name: "remove_medication_reminder",
-    description: "Remove a medication reminder by name (from the medications list in context).",
+    description: "Remove a medication reminder by name (from the MEDICATION REMINDERS list in context).",
     input_schema: { type: "object" as const, properties: { name: { type: "string" } }, required: ["name"] },
   },
   {
@@ -677,6 +677,10 @@ async function executeTool(name: string, input: Record<string, string>, defaultC
       return executeGetMemories(input.elder_id || elderId);
     case "cancel_appointment":
       return executeCancelAppointment(elderId, input.title, input.date, timezone);
+    case "add_medication_reminder":
+      return executeAddMedication(elderId, input.name, (input as unknown as { times?: string[] }).times || []);
+    case "remove_medication_reminder":
+      return executeRemoveMedication(elderId, input.name);
     default:
       if (CLIENT_TOOLS.has(name)) {
         // Executed by the phone after the reply. Tell the model it is done so it can confirm naturally.
@@ -684,6 +688,46 @@ async function executeTool(name: string, input: Record<string, string>, defaultC
       }
       return JSON.stringify({ error: `Unknown tool: ${name}` });
   }
+}
+
+const HHMM = /^\d{2}:\d{2}$/;
+async function executeAddMedication(elderId: string, rawName: string, rawTimes: string[]): Promise<string> {
+  const name = String(rawName || "").trim();
+  const times = Array.from(new Set((rawTimes || []).map(String).filter(t => HHMM.test(t)))).sort();
+  const action = { clientAction: { type: "add_medication_reminder", name, times } };
+  if (!name || times.length === 0) return JSON.stringify({ saved: false, reason: "name and HH:MM times required" });
+  const supabase = getSupabaseAdmin();
+  if (!supabase || elderId === "default") return JSON.stringify({ saved: false, ...action });
+  const { data: rows } = await supabase.from("health_medications").select("id, name, times").eq("user_id", elderId).eq("is_active", true);
+  const same = (rows || []).find((r: { name: string }) => r.name.trim().toLowerCase() === name.toLowerCase());
+  if (same) {
+    const merged = Array.from(new Set([...(same.times || []), ...times])).sort();
+    const { error } = await supabase.from("health_medications").update({ times: merged, reminder_enabled: true }).eq("id", same.id);
+    return JSON.stringify({ saved: !error, name, times: merged, note: "Saved to the health wallet; the phone will ring at these times. Confirm in one short sentence.", ...action });
+  }
+  const { error } = await supabase.from("health_medications").insert({ user_id: elderId, name, times, reminder_enabled: true, frequency: `하루 ${times.length}번` });
+  return JSON.stringify({ saved: !error, name, times, note: "Saved to the health wallet; the phone will ring at these times. Confirm in one short sentence.", ...action });
+}
+
+async function executeRemoveMedication(elderId: string, rawName: string): Promise<string> {
+  const name = String(rawName || "").trim();
+  const action = { clientAction: { type: "remove_medication_reminder", name } };
+  if (!name) return JSON.stringify({ removed: 0 });
+  const supabase = getSupabaseAdmin();
+  if (!supabase || elderId === "default") return JSON.stringify({ removed: 0, ...action });
+  const { data: rows } = await supabase.from("health_medications").select("id, name, dosage, purpose").eq("user_id", elderId).eq("is_active", true);
+  const n = name.toLowerCase();
+  const hits = (rows || []).filter((r: { name: string }) => { const rn = r.name.toLowerCase(); return rn.includes(n) || n.includes(rn); });
+  if (hits.length === 0) return JSON.stringify({ removed: 0, reason: "no reminder with that name", hint: "Tell the user which reminders exist (see MEDICATION REMINDERS)." });
+  let removed = 0;
+  for (const h of hits as { id: string; dosage?: string; purpose?: string }[]) {
+    // keep wallet details if there are any; otherwise drop the row
+    const r = h.dosage || h.purpose
+      ? await supabase.from("health_medications").update({ times: [], reminder_enabled: false }).eq("id", h.id)
+      : await supabase.from("health_medications").delete().eq("id", h.id);
+    if (!r.error) removed++;
+  }
+  return JSON.stringify({ removed, names: hits.map((h: { name: string }) => h.name), ...action });
 }
 
 async function executeCancelAppointment(elderId: string, title: string, date: string | undefined, timezone: string): Promise<string> {
@@ -1164,7 +1208,7 @@ export async function POST(req: NextRequest) {
     const contactsList: string = Array.isArray(cc.contacts) && cc.contacts.length
       ? cc.contacts.map((c: { name: string; relation?: string }) => `${c.relation ? c.relation + " " : ""}${c.name}`).join(", ")
       : "(none saved yet)";
-    const medsList: string = Array.isArray(cc.medications) && cc.medications.length
+    let medsList: string = Array.isArray(cc.medications) && cc.medications.length
       ? cc.medications.map((m: { name: string; times: string[] }) => `${m.name} at ${(m.times || []).join(", ")}`).join("; ")
       : "(no medication reminders set)";
     const fontLevel: string = cc.fontSize || "보통";
@@ -1215,7 +1259,7 @@ export async function POST(req: NextRequest) {
     if (elderId !== "default" && adminDb) {
       try {
         const [meds, allergies, diagnoses, doctors, insurance, emergency] = await Promise.all([
-          adminDb.from("health_medications").select("name, dosage, frequency, purpose").eq("user_id", elderId).eq("is_active", true),
+          adminDb.from("health_medications").select("name, dosage, frequency, purpose, times, reminder_enabled").eq("user_id", elderId).eq("is_active", true),
           adminDb.from("health_allergies").select("allergen, type, severity").eq("user_id", elderId),
           adminDb.from("health_diagnoses").select("name, icd_code").eq("user_id", elderId).eq("is_active", true),
           adminDb.from("health_doctors").select("name, specialty, phone, is_pcp").eq("user_id", elderId),
@@ -1223,7 +1267,10 @@ export async function POST(req: NextRequest) {
           adminDb.from("health_emergency_contacts").select("name, relationship, phone").eq("user_id", elderId),
         ]);
         const parts: string[] = [];
-        if (meds.data?.length) parts.push("Medications: " + meds.data.map((m: Record<string, string>) => `${m.name} ${m.dosage} (${m.frequency}, ${m.purpose})`).join("; "));
+        if (meds.data?.length) parts.push("Medications: " + meds.data.map((m: Record<string, string>) => `${m.name} ${m.dosage || ""} (${m.frequency || ""}${m.purpose ? ", " + m.purpose : ""})`).join("; "));
+        const remindersFromDb = (meds.data || []).filter((m: { times?: string[]; reminder_enabled?: boolean }) => Array.isArray(m.times) && m.times.length && m.reminder_enabled !== false)
+          .map((m: { name: string; times: string[] }) => `${m.name} at ${m.times.join(", ")}`);
+        if (remindersFromDb.length) medsList = remindersFromDb.join("; ");
         if (allergies.data?.length) parts.push("Allergies: " + allergies.data.map((a: Record<string, string>) => `${a.allergen} (${a.severity})`).join(", "));
         if (diagnoses.data?.length) parts.push("Diagnoses: " + diagnoses.data.map((d: Record<string, string>) => d.name).join(", "));
         if (doctors.data?.length) parts.push("Doctors: " + doctors.data.map((d: Record<string, string | boolean>) => `${d.name} (${d.specialty}${d.is_pcp ? ", PCP" : ""}) ${d.phone || ""}`).join("; "));

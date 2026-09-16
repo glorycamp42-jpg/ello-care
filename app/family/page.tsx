@@ -264,7 +264,8 @@ export default function FamilyHome() {
           </a>
         )}
 
-        <a href="/family/setup" className="block bg-white rounded-xl shadow-sm p-4 mb-4 border-2 border-dashed border-blue-200 text-center text-[#1B6FE8] font-bold text-[15px]">+ 부모님 폰 설정하기 (번호·QR 발급)</a>
+        <a href="/family/setup" className="block bg-white rounded-xl shadow-sm p-4 mb-3 border-2 border-dashed border-blue-200 text-center text-[#1B6FE8] font-bold text-[15px]">+ 부모님 폰 설정하기 (번호·QR 발급)</a>
+        {elderId && <a href="/family/medications" className="block bg-white rounded-xl shadow-sm p-4 mb-4 text-center text-[#1B6FE8] font-bold text-[15px]">💊 약 알림 관리 (부모님 폰과 공유)</a>}
 
         {/* Stats row */}
         <div className="grid grid-cols-2 gap-3 mb-4">

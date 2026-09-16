@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { syncMedsFromServer, addMedOnServer, updateMedOnServer, removeMedOnServer } from "@/lib/meds-sync";
 
 /* ── Shared types & storage helpers (used by MedicationAlarm too) ── */
 export interface Medication {
@@ -8,6 +9,7 @@ export interface Medication {
   name: string;
   times: string[]; // "HH:MM" (24h)
   enabled: boolean;
+  dosage?: string; // from the health wallet, if entered there
 }
 
 export const MEDS_KEY = "ello-medications";
@@ -230,7 +232,8 @@ export default function MedicationPage({
   const [formError, setFormError] = useState("");
 
   useEffect(() => {
-    setMeds(loadMeds());
+    setMeds(loadMeds()); // cache first, then the shared list from the server (family / care center edits included)
+    syncMedsFromServer().then(list => { if (list) setMeds(list); });
     const today = todayStr();
     const keys = new Set<string>();
     loadMedLog().forEach((e) => {
@@ -242,6 +245,10 @@ export default function MedicationPage({
   function persist(next: Medication[]) {
     setMeds(next);
     saveMeds(next);
+  }
+  async function refresh() {
+    const list = await syncMedsFromServer();
+    if (list) setMeds(list);
   }
 
   function toggleTime(time: string) {
@@ -264,7 +271,8 @@ export default function MedicationPage({
       times,
       enabled: true,
     };
-    persist([...meds, med]);
+    persist([...meds.filter(m => m.name.trim().toLowerCase() !== med.name.toLowerCase()), med]);
+    addMedOnServer({ name: med.name, times }).then(refresh);
     setName("");
     setSelTimes([]);
     setCustomTime("");
@@ -274,10 +282,13 @@ export default function MedicationPage({
 
   function handleRemove(id: string) {
     persist(meds.filter((m) => m.id !== id));
+    removeMedOnServer(id).then(refresh);
   }
 
   function handleToggle(id: string) {
+    const target = meds.find((m) => m.id === id);
     persist(meds.map((m) => (m.id === id ? { ...m, enabled: !m.enabled } : m)));
+    if (target) updateMedOnServer(id, { enabled: !target.enabled }).then(refresh);
   }
 
   return (
@@ -333,6 +344,7 @@ export default function MedicationPage({
                 </button>
               </div>
               <div className="flex flex-wrap gap-2 mb-3">
+                {med.times.length === 0 && <span className="px-3 py-1.5 rounded-full text-[15px] font-semibold bg-warm-gray-light/15 text-warm-gray">{langCode === "ko" ? "알림 시간 없음" : "no reminder time"}</span>}
                 {med.times.map((time) => {
                   const taken = takenKeys.has(time);
                   return (

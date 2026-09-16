@@ -8,6 +8,7 @@ const TABS = [
   { name: "홈", emoji: "🏠", href: "/family" },
   { name: "위치", emoji: "📍", href: "/family/location" },
   { name: "일정", emoji: "📅", href: "/family/appointments" },
+  { name: "약", emoji: "💊", href: "/family/medications" },
   { name: "설정", emoji: "⚙️", href: "/family/settings" },
 ];
 
@@ -30,7 +31,7 @@ export default function FamilyLayout({ children }: { children: React.ReactNode }
 
     return () => {
       if (existingManifest) existingManifest.setAttribute("href", "/manifest.json");
-      if (existingTheme) existingTheme.setAttribute("content", "#1B6FE8");
+      if (existingTheme) existingTheme.setAttribute("content", "#FFF8EE");
       if (existingIcon) existingIcon.setAttribute("href", "/icons/icon-192.png");
     };
   }, []);

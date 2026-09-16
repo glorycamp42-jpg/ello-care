@@ -32,7 +32,7 @@ function isValidTable(t: string): t is TableName {
 
 const ALLOWED_COLS: Record<TableName, string[]> = {
   health_insurance_cards: ["user_id", "carrier", "plan_name", "member_id", "group_number", "policy_holder", "effective_date", "expiry_date", "front_image_url", "back_image_url", "is_primary", "notes"],
-  health_medications: ["user_id", "name", "dosage", "frequency", "route", "purpose", "prescriber", "pharmacy", "start_date", "end_date", "refill_date", "is_active", "notes"],
+  health_medications: ["user_id", "name", "dosage", "frequency", "route", "purpose", "prescriber", "pharmacy", "start_date", "end_date", "refill_date", "is_active", "notes", "times", "reminder_enabled"],
   health_allergies: ["user_id", "allergen", "type", "reaction", "severity", "notes"],
   health_diagnoses: ["user_id", "name", "icd_code", "diagnosed_date", "diagnosing_doctor", "is_active", "notes"],
   health_doctors: ["user_id", "name", "specialty", "clinic_name", "phone", "fax", "address", "is_pcp", "notes"],

@@ -46,6 +46,13 @@ export async function POST(req: NextRequest) {
   const elderId = created.user.id;
   await admin.from("users").upsert({ id: elderId, email: elderEmail, full_name: name, role: "elder", mode: "care", ui_lang: "ko", onboarded_at: new Date().toISOString() });
 
+  // 1b) medication reminders go into the shared health wallet (엘로 + family + care center all read this)
+  if (medications.length) {
+    await admin.from("health_medications").insert(medications.map((m: { name: string; times: string[] }) => ({
+      user_id: elderId, name: m.name, times: m.times, reminder_enabled: true, frequency: m.times.length ? `하루 ${m.times.length}번` : "",
+    })));
+  }
+
   // 2) family link (accepted, primary)
   await admin.from("family_links").upsert({ elder_id: elderId, family_id: caller.id, relationship, status: "accepted", is_primary: true }, { onConflict: "family_id,elder_id" });
 

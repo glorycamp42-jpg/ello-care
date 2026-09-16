@@ -6,6 +6,7 @@ import RemindersPage from "@/components/RemindersPage";
 import SafetyPage, { findContactByKeyword, FamilyContact } from "@/components/SafetyPage";
 import HealthWalletPage from "@/components/HealthWalletPage";
 import MedicationPage, { loadMeds, saveMeds } from "@/components/MedicationPage";
+import { syncMedsFromServer } from "@/lib/meds-sync";
 import SettingsPage from "@/components/SettingsPage";
 import InterpreterPage from "@/components/InterpreterPage";
 import MessagesPage from "@/components/MessagesPage";
@@ -143,6 +144,8 @@ export default function Home() {
           }
         } catch {}
         setUserId(user.id);
+        // shared medication list (health wallet): family / care-center edits show up here
+        syncMedsFromServer().then(list => { if (list) loadToday(); });
         const n = meta.name || meta.full_name;
         if (n) setUserName(`${n} 님`);
         return;
@@ -219,6 +222,16 @@ export default function Home() {
     setToday((ahead.length > 0 ? ahead : items).slice(0, 3));
   }
   useEffect(() => { loadToday(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [userId, showReminders, showMedications]);
+  // keep the phone's medication cache fresh (every 10 min + when the app comes back to the front)
+  useEffect(() => {
+    if (!userId) return;
+    const pull = () => { syncMedsFromServer().then(list => { if (list) loadToday(); }); };
+    const iv = setInterval(pull, 10 * 60 * 1000);
+    const onVis = () => { if (document.visibilityState === "visible") pull(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { clearInterval(iv); document.removeEventListener("visibilitychange", onVis); };
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [userId]);
 
   /* ── restore last 24h or greet ── */
   useEffect(() => {
@@ -380,12 +393,15 @@ export default function Home() {
         if (i >= 0) meds[i] = { ...meds[i], times: Array.from(new Set([...meds[i].times, ...times])).sort(), enabled: true };
         else meds.push({ id: `m_${Date.now()}`, name, times: times.sort(), enabled: true });
         saveMeds(meds); loadToday();
+        // the server already saved it (chat tool); re-pull so ids match the shared list
+        syncMedsFromServer().then(() => loadToday());
         break;
       }
       case "remove_medication_reminder": {
         const name = String(a.name || "").trim();
         if (!name) break;
         saveMeds(loadMeds().filter(m => !m.name.includes(name) && !name.includes(m.name))); loadToday();
+        syncMedsFromServer().then(() => loadToday());
         break;
       }
       case "set_font_size": {
