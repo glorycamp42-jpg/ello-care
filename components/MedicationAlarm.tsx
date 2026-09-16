@@ -219,6 +219,9 @@ export default function MedicationAlarm() {
       takenAt: new Date().toISOString(),
     };
     saveJSON(MED_LOG_KEY, [...log, entry].slice(-500));
+    // 서버에도 남김 → 연결된 가족의 엘로가 "오늘 약 드셨어?"에 답할 수 있음
+    fetch("/api/med-log", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date: entry.date, time: entry.time, names: entry.names, status: "taken" }) }).catch(() => {});
     closeAlarm();
   }
 

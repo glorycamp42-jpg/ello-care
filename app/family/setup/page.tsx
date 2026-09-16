@@ -17,6 +17,7 @@ export default function FamilySetupPage() {
   const [step, setStep] = useState<"form" | "meds" | "done">("form");
   const [name, setName] = useState("");
   const [relation, setRelation] = useState("딸");
+  const [parentRel, setParentRel] = useState("어머니");
   const [myPhone, setMyPhone] = useState("");
   const [meds, setMeds] = useState<{ name: string; times: string[] }[]>([{ name: "", times: [] }]);
   const [busy, setBusy] = useState(false);
@@ -37,7 +38,7 @@ export default function FamilySetupPage() {
     try {
       const contacts = myPhone.replace(/\D/g, "").length >= 10 ? [{ name: relation, relation, phone: myPhone }] : [];
       const medications = meds.filter(m => m.name.trim() && m.times.length).map(m => ({ name: m.name.trim(), times: m.times }));
-      const res = await fetch("/api/family/create-elder", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, relationship: relation, contacts, medications }) });
+      const res = await fetch("/api/family/create-elder", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, relationship: relation, parentRelationship: parentRel, contacts, medications }) });
       const data = await res.json();
       if (!res.ok || !data.ok) { setError(data.error || "설정에 실패했어요."); return; }
       setResult({ pin: data.pin, loginUrl: data.loginUrl, name: data.name });
@@ -60,6 +61,14 @@ export default function FamilySetupPage() {
             <span className="text-[15px] font-bold text-gray-700">부모님 성함</span>
             <input className={input} value={name} onChange={e => setName(e.target.value)} placeholder="김영자" />
           </label>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[15px] font-bold text-gray-700">이분은 나의</span>
+            <div className="flex flex-wrap gap-2">
+              {["어머니", "아버지", "할머니", "할아버지", "장모님", "장인어른", "시어머니", "시아버지"].map(r => (
+                <button key={r} onClick={() => setParentRel(r)} className={`h-11 px-4 rounded-full text-[16px] font-bold border-2 ${parentRel === r ? "bg-[#1B6FE8] border-[#1B6FE8] text-white" : "bg-white border-blue-100 text-gray-700"}`}>{r}</button>
+              ))}
+            </div>
+          </div>
           <div className="flex flex-col gap-1.5">
             <span className="text-[15px] font-bold text-gray-700">부모님께 나는</span>
             <div className="flex flex-wrap gap-2">

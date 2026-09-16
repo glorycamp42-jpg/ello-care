@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { getCaller, canAccessElder } from "@/lib/api-auth";
+import { buildCheckin, checkinToText } from "@/lib/checkin";
+import { listLinks, connectByCode, issueCode } from "@/lib/links";
 
 /* ── Local-date helper (uses the user's device timezone, not server TZ) ── */
 // The client sends its IANA timezone (e.g. "America/Los_Angeles") in body.timezone.
@@ -257,6 +259,26 @@ const TOOLS = [
     input_schema: { type: "object" as const, properties: { name: { type: "string" } }, required: ["name"] },
   },
   {
+    name: "check_on_person",
+    description: "How a LINKED PERSON (see LINKED PEOPLE) is doing today: whether they talked to 엘로, a one-line wellbeing note, whether they took their medications, upcoming appointments — only what that person chose to share. Use for '엄마 오늘 약 드셨어?', '아버지 잘 계셔?', '수진이 요즘 어때?'.",
+    input_schema: { type: "object" as const, properties: { who: { type: "string", description: "Name or relationship as the user said it: 엄마, 어머니, 아버지, 딸, 수진 ..." } }, required: ["who"] },
+  },
+  {
+    name: "get_my_link_code",
+    description: "Give the user their 6-digit 연결 번호 so someone (딸, 아들, 배우자...) can link to them. Use when they say '딸이랑 연결하고 싶어', '내 연결 번호', '연결 번호 알려줘'. Read the digits slowly, two at a time.",
+    input_schema: { type: "object" as const, properties: { relationship: { type: "string", description: "What the user is to the other person, if said (e.g. 어머니, 아버지, 남편). Optional." } } },
+  },
+  {
+    name: "link_person",
+    description: "Link to another person using the 6-digit code THEY gave the user. Use when the user reads out a code: '딸 번호 4 8 2 1 0 7', '연결 번호 482107'. Confirm the digits back before calling if unsure.",
+    input_schema: { type: "object" as const, properties: { code: { type: "string", description: "6 digits" }, relationship: { type: "string", description: "Who that person is to the user: 딸, 아들, 어머니, 남편, 친구 ..." } }, required: ["code", "relationship"] },
+  },
+  {
+    name: "log_medication_taken",
+    description: "Record that the user took their medication now (or for a given reminder time). Use when they say '약 먹었어', '아침 약 먹었어요', '혈압약 먹었어'. Linked family can then see it.",
+    input_schema: { type: "object" as const, properties: { time: { type: "string", description: "Reminder time HH:MM if they named one (아침 → the morning reminder time from MEDICATION REMINDERS). Omit to use the most recent reminder time." }, name: { type: "string", description: "Medicine name if said" } } },
+  },
+  {
     name: "cancel_appointment",
     description: "Cancel (delete) an upcoming appointment the user mentions, e.g. 내일 병원 취소해줘. Matches by title and optional date.",
     input_schema: { type: "object" as const, properties: { title: { type: "string", description: "Part of the appointment title, e.g. 병원, 약국" }, date: { type: "string", description: "YYYY-MM-DD if the user said a day (오늘/내일 → compute)" } }, required: ["title"] },
@@ -268,8 +290,8 @@ const TOOLS = [
   },
   {
     name: "open_screen",
-    description: "Open a screen of the app: reminders (일정 보기), health_wallet (건강수첩), medications (약 알림 목록), safety (안심 연락처), settings (설정). Use when the user asks to see/open one of these.",
-    input_schema: { type: "object" as const, properties: { screen: { type: "string", enum: ["reminders", "health_wallet", "medications", "safety", "settings"] } }, required: ["screen"] },
+    description: "Open a screen of the app: reminders (일정 보기), health_wallet (건강수첩), medications (약 알림 목록), safety (안심 연락처), links (가족 연결 화면), settings (설정). Use when the user asks to see/open one of these.",
+    input_schema: { type: "object" as const, properties: { screen: { type: "string", enum: ["reminders", "health_wallet", "medications", "safety", "links", "settings"] } }, required: ["screen"] },
   },
   {
     name: "take_photo",
@@ -294,7 +316,7 @@ const TOOLS = [
 ];
 
 /* Tools whose effect happens on the phone: the server just records a client action for the app to run. */
-const CLIENT_TOOLS = new Set(["open_interpreter", "call_family", "add_family_contact", "add_medication_reminder", "remove_medication_reminder", "set_font_size", "open_screen", "take_photo", "repeat_last", "compose_text", "read_incoming_text"]);
+const CLIENT_TOOLS = new Set(["get_my_link_code", "log_medication_taken", "open_interpreter", "call_family", "add_family_contact", "add_medication_reminder", "remove_medication_reminder", "set_font_size", "open_screen", "take_photo", "repeat_last", "compose_text", "read_incoming_text"]);
 
 /* ── Tool Execution Functions ── */
 
@@ -677,6 +699,14 @@ async function executeTool(name: string, input: Record<string, string>, defaultC
       return executeGetMemories(input.elder_id || elderId);
     case "cancel_appointment":
       return executeCancelAppointment(elderId, input.title, input.date, timezone);
+    case "check_on_person":
+      return executeCheckOnPerson(elderId, input.who, timezone);
+    case "get_my_link_code":
+      return executeMyLinkCode(elderId, input.relationship || "");
+    case "link_person":
+      return executeLinkPerson(elderId, input.code, input.relationship || "");
+    case "log_medication_taken":
+      return executeLogMedicationTaken(elderId, input.time || "", input.name || "", timezone);
     case "add_medication_reminder":
       return executeAddMedication(elderId, input.name, (input as unknown as { times?: string[] }).times || []);
     case "remove_medication_reminder":
@@ -691,6 +721,60 @@ async function executeTool(name: string, input: Record<string, string>, defaultC
 }
 
 const HHMM = /^\d{2}:\d{2}$/;
+
+async function executeCheckOnPerson(elderId: string, who: string, timezone: string): Promise<string> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase || elderId === "default") return JSON.stringify({ error: "not logged in" });
+  const { watching } = await listLinks(supabase, elderId);
+  if (!watching.length) return JSON.stringify({ found: false, hint: "The user has no linked people yet. Offer get_my_link_code (so family can link to them) or link_person (if they have someone's code)." });
+  const q = String(who || "").trim().toLowerCase();
+  const ALIAS: Record<string, string[]> = { 엄마: ["어머니", "엄마", "어머님", "모친"], 아빠: ["아버지", "아빠", "아버님", "부친"], 딸: ["딸", "따님"], 아들: ["아들", "아드님"], 남편: ["남편", "영감"], 아내: ["아내", "와이프", "집사람", "할멈"] };
+  const expand = (t: string) => { for (const k of Object.keys(ALIAS)) if (ALIAS[k].some(a => t.includes(a))) return ALIAS[k]; return [t]; };
+  const qs = expand(q);
+  let target = watching.find(w => {
+    const rel = w.relationship.toLowerCase(), nm = w.name.toLowerCase();
+    return qs.some(a => a && (rel.includes(a) || (nm.length >= 2 && (nm.includes(a) || a.includes(nm)))));
+  });
+  if (!target && watching.length === 1) target = watching[0];
+  if (!target) return JSON.stringify({ found: false, people: watching.map(w => `${w.relationship} ${w.name}`), hint: "Ask which person they mean." });
+  const c = await buildCheckin(elderId, target.userId, timezone);
+  if ("error" in c) return JSON.stringify({ found: false, error: c.error });
+  return JSON.stringify({ found: true, facts: checkinToText(c, timezone), note: "Answer warmly in 2-3 short sentences from these facts only. Do not invent details. If something is '(공유 안 함)', say that person hasn't shared it." });
+}
+
+async function executeMyLinkCode(elderId: string, relationship: string): Promise<string> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase || elderId === "default") return JSON.stringify({ error: "not logged in" });
+  const r = await issueCode(supabase, elderId, relationship);
+  if ("error" in r) return JSON.stringify(r);
+  return JSON.stringify({ code: r.code, spoken: r.code!.split("").join(" "), note: "Tell them: the other person opens their 엘로, 설정 → 가족 연결, and enters this number (valid 24 hours). Read the digits slowly. The phone also shows it on screen.", clientAction: { type: "show_link_code", code: r.code } });
+}
+
+async function executeLinkPerson(elderId: string, code: string, relationship: string): Promise<string> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase || elderId === "default") return JSON.stringify({ error: "not logged in" });
+  const r = await connectByCode(supabase, elderId, String(code || ""), relationship);
+  return JSON.stringify(r);
+}
+
+async function executeLogMedicationTaken(elderId: string, time: string, name: string, timezone: string): Promise<string> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase || elderId === "default") return JSON.stringify({ logged: false });
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const now = new Intl.DateTimeFormat("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date());
+  const { data: meds } = await supabase.from("health_medications").select("name, times").eq("user_id", elderId).eq("is_active", true);
+  const rows = ((meds || []) as { name: string; times: string[] }[]).filter(m => !name || m.name.toLowerCase().includes(name.toLowerCase()) || name.toLowerCase().includes(m.name.toLowerCase()));
+  const allTimes = Array.from(new Set(rows.flatMap(m => m.times || []))).sort();
+  let slot = HHMM.test(time) ? time : "";
+  if (!slot) { const past = allTimes.filter(t => t <= now); slot = past.length ? past[past.length - 1] : (allTimes[0] || now); }
+  const names = rows.filter(m => (m.times || []).includes(slot)).map(m => m.name);
+  const medNames = names.length ? names : rows.map(m => m.name);
+  const { error } = await supabase.from("medication_log").upsert(
+    { user_id: elderId, log_date: today, scheduled_time: slot, med_names: medNames, status: "taken", taken_at: new Date().toISOString() },
+    { onConflict: "user_id,log_date,scheduled_time" });
+  return JSON.stringify({ logged: !error, time: slot, names: medNames, note: "Confirm in one short warm sentence (e.g. 네, 아침 약 드신 걸로 적어둘게요).", clientAction: { type: "medication_logged", time: slot, names: medNames } });
+}
+
 async function executeAddMedication(elderId: string, rawName: string, rawTimes: string[]): Promise<string> {
   const name = String(rawName || "").trim();
   const times = Array.from(new Set((rawTimes || []).map(String).filter(t => HHMM.test(t)))).sort();
@@ -1238,6 +1322,15 @@ export async function POST(req: NextRequest) {
       else return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
     }
     console.log(`[chat] Final elderId: ${elderId}`);
+    let linkedList = "(none)", watcherList = "(none)";
+    try {
+      const adminForLinks = getSupabaseAdmin();
+      if (adminForLinks && elderId !== "default") {
+        const { watching, watchers } = await listLinks(adminForLinks, elderId);
+        if (watching.length) linkedList = watching.map(w => `${w.relationship} ${w.name}`.trim()).join(", ");
+        if (watchers.length) watcherList = watchers.map(w => `${w.relationship} ${w.name}`.trim()).join(", ");
+      }
+    } catch { /* links are optional */ }
     const adminDb = getSupabaseAdmin();
     if (elderId !== "default" && adminDb) {
       const { data: mems } = await adminDb
@@ -1316,6 +1409,12 @@ WHAT IS ON THE USER'S PHONE RIGHT NOW:
 - Saved family contacts: ${contactsList}
 - Medication reminders: ${medsList}
 - Text size: ${fontLevel}
+
+LINKED PEOPLE (people the user can check on with check_on_person): ${linkedList}
+People who can see the user's day: ${watcherList}
+- "엄마 오늘 약 드셨어?", "아버지 잘 계셔?", "딸 요즘 어때?" → check_on_person. Never guess; if no one is linked, explain how to link (get_my_link_code / link_person).
+- "딸이랑 연결해줘" / "내 연결 번호" → get_my_link_code. "번호 48 21 07 연결해" → link_person.
+- "약 먹었어" → log_medication_taken (then confirm). Do NOT call add_medication_reminder for this.
 
 YOU OPERATE THE APP. The user should never need to find a button — when they ask for any of these, call the tool and confirm in one sentence:
 - 통역 / talk to a doctor or clerk in English etc. → open_interpreter

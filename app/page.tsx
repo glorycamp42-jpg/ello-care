@@ -5,7 +5,8 @@ import CharacterAvatar from "@/components/CharacterAvatar";
 import RemindersPage from "@/components/RemindersPage";
 import SafetyPage, { findContactByKeyword, FamilyContact } from "@/components/SafetyPage";
 import HealthWalletPage from "@/components/HealthWalletPage";
-import MedicationPage, { loadMeds, saveMeds } from "@/components/MedicationPage";
+import MedicationPage, { loadMeds, saveMeds, todayStr, MED_ACK_KEY, MED_LOG_KEY } from "@/components/MedicationPage";
+import LinksPage from "@/components/LinksPage";
 import { syncMedsFromServer } from "@/lib/meds-sync";
 import SettingsPage from "@/components/SettingsPage";
 import InterpreterPage from "@/components/InterpreterPage";
@@ -97,6 +98,7 @@ export default function Home() {
   const [showReminders, setShowReminders] = useState(false);
   const [showHealthWallet, setShowHealthWallet] = useState(false);
   const [showMedications, setShowMedications] = useState(false);
+  const [showLinks, setShowLinks] = useState<{ code?: string | null } | null>(null);
   const [showSafety, setShowSafety] = useState(false);
   const [showInterpreter, setShowInterpreter] = useState<string | null>(null); // target lang code when open
   const [showMessages, setShowMessages] = useState<{ tab: "read" | "write"; intent?: string; to?: string; incoming?: string } | null>(null);
@@ -413,8 +415,29 @@ export default function Home() {
         const map: Record<string, () => void> = {
           reminders: () => setShowReminders(true), health_wallet: () => setShowHealthWallet(true),
           medications: () => setShowMedications(true), safety: () => setShowSafety(true), settings: () => setShowSettings(true),
+          links: () => setShowLinks({}),
         };
         const open = map[String(a.screen || "")]; if (open) setTimeout(open, 600);
+        break;
+      }
+      case "show_link_code": {
+        // 엘로 read the digits out loud; also show them big so the user can hand the phone over
+        const code = String(a.code || "");
+        setTimeout(() => setShowLinks({ code }), 1500);
+        break;
+      }
+      case "medication_logged": {
+        // "약 먹었어" told to 엘로 → mark the phone's alarm as answered so it does not ring for this slot
+        try {
+          const time = String(a.time || ""); const names = Array.isArray(a.names) ? a.names.map(String) : [];
+          const today = todayStr();
+          const acks = JSON.parse(localStorage.getItem(MED_ACK_KEY) || "{}");
+          for (const m of loadMeds()) if (names.includes(m.name) && m.times.includes(time)) acks[`${today}|${time}|${m.id}`] = true;
+          localStorage.setItem(MED_ACK_KEY, JSON.stringify(acks));
+          const log = JSON.parse(localStorage.getItem(MED_LOG_KEY) || "[]");
+          log.push({ date: today, time, names, takenAt: new Date().toISOString() });
+          localStorage.setItem(MED_LOG_KEY, JSON.stringify(log.slice(-500)));
+        } catch {}
         break;
       }
       case "take_photo":
@@ -534,7 +557,8 @@ export default function Home() {
   }
 
   /* ── sub pages (all hooks are above this line) ── */
-  const closeAll = () => { setShowSettings(false); setShowReminders(false); setShowHealthWallet(false); setShowMedications(false); setShowSafety(false); setContacts(loadContacts()); setBigFont(loadFontIdx() > 0); };
+  const closeAll = () => { setShowSettings(false); setShowReminders(false); setShowHealthWallet(false); setShowMedications(false); setShowSafety(false); setShowLinks(null); setContacts(loadContacts()); setBigFont(loadFontIdx() > 0); };
+  if (showLinks) return <LinksPage onClose={closeAll} initialCode={showLinks.code} onAsk={(text) => { closeAll(); setTimeout(() => sendMessage(text), 300); }} />;
   if (showReminders) return <RemindersPage onClose={closeAll} userId={userId} langCode="ko" />;
   if (showHealthWallet) return <HealthWalletPage onClose={closeAll} userId={userId} langCode="ko" />;
   if (showMedications) return <MedicationPage onClose={closeAll} langCode="ko" />;
@@ -545,6 +569,7 @@ export default function Home() {
     <SettingsPage userName={userName} onClose={closeAll}
       onOpenReminders={() => setShowReminders(true)} onOpenHealthWallet={() => setShowHealthWallet(true)}
       onOpenMedications={() => setShowMedications(true)} onOpenSafety={() => setShowSafety(true)}
+      onOpenLinks={() => setShowLinks({})}
       textInputOn={textInputOn} onToggleTextInput={toggleTextInput} />
   );
 

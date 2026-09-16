@@ -54,7 +54,11 @@ export async function POST(req: NextRequest) {
   }
 
   // 2) family link (accepted, primary)
-  await admin.from("family_links").upsert({ elder_id: elderId, family_id: caller.id, relationship, status: "accepted", is_primary: true }, { onConflict: "family_id,elder_id" });
+  // relationship on a link row = what the SEEN person (elder_id) is to the VIEWER (family_id)
+  const parentRelationship = String(body.parentRelationship || "부모님").slice(0, 20);
+  await admin.from("family_links").upsert({ elder_id: elderId, family_id: caller.id, relationship: parentRelationship, status: "accepted", is_primary: true }, { onConflict: "family_id,elder_id" });
+  // and the other way round, so the parent can ask 엘로 how the family member is doing too (연결은 양방향)
+  await admin.from("family_links").upsert({ elder_id: caller.id, family_id: elderId, relationship, status: "accepted", is_primary: false }, { onConflict: "family_id,elder_id", ignoreDuplicates: true });
 
   // 3) unique 4-digit PIN (avoid 0000/1234-style trivial ones)
   let pin = "";
