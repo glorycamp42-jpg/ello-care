@@ -3,6 +3,7 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { getCaller, canAccessElder } from "@/lib/api-auth";
 import { buildCheckin, checkinToText } from "@/lib/checkin";
 import { listLinks, connectByCode, issueCode } from "@/lib/links";
+import { sendMessage as sendElloMessage, unreadFor, markRead } from "@/lib/messages";
 
 /* ── Local-date helper (uses the user's device timezone, not server TZ) ── */
 // The client sends its IANA timezone (e.g. "America/Los_Angeles") in body.timezone.
@@ -262,6 +263,11 @@ const TOOLS = [
     name: "check_on_person",
     description: "How a LINKED PERSON (see LINKED PEOPLE) is doing today: whether they talked to 엘로, a one-line wellbeing note, whether they took their medications, upcoming appointments — only what that person chose to share. Use for '엄마 오늘 약 드셨어?', '아버지 잘 계셔?', '수진이 요즘 어때?'.",
     input_schema: { type: "object" as const, properties: { who: { type: "string", description: "Name or relationship as the user said it: 엄마, 어머니, 아버지, 딸, 수진 ..." } }, required: ["who"] },
+  },
+  {
+    name: "send_message_to_person",
+    description: "Send a short message to a LINKED PERSON through 엘로 (their 엘로 reads it out loud to them; no SMS app involved). Use for '엄마한테 내일 3시에 갈게라고 전해줘', '수진이한테 고맙다고 해', and for replying to a message in UNREAD MESSAGES ('알았다고 해', '응 그렇게 해'). Write the body in the user's own words, first person, natural Korean (or their language).",
+    input_schema: { type: "object" as const, properties: { who: { type: "string", description: "Name or relationship as the user said it (엄마, 딸, 수진)" }, body: { type: "string", description: "The message text as the recipient should read it, e.g. '내일 3시에 갈게요'" } }, required: ["who", "body"] },
   },
   {
     name: "get_my_link_code",
@@ -709,6 +715,8 @@ async function executeTool(name: string, input: Record<string, string>, defaultC
       return executeCancelAppointment(elderId, input.title, input.date, timezone);
     case "check_on_person":
       return executeCheckOnPerson(elderId, input.who, timezone);
+    case "send_message_to_person":
+      return executeSendMessage(elderId, input.who, input.body);
     case "get_my_link_code":
       return executeMyLinkCode(elderId, input.relationship || "");
     case "link_person":
@@ -730,20 +738,40 @@ async function executeTool(name: string, input: Record<string, string>, defaultC
 
 const HHMM = /^\d{2}:\d{2}$/;
 
+type LinkedPerson = { userId: string; name: string; relationship: string };
+function matchPerson(people: LinkedPerson[], who: string): LinkedPerson | undefined {
+  const q = String(who || "").trim().toLowerCase();
+  const ALIAS: Record<string, string[]> = { 엄마: ["어머니", "엄마", "어머님", "모친"], 아빠: ["아버지", "아빠", "아버님", "부친"], 딸: ["딸", "따님"], 아들: ["아들", "아드님"], 남편: ["남편", "영감"], 아내: ["아내", "와이프", "집사람", "할멈"] };
+  const expand = (t: string) => { for (const k of Object.keys(ALIAS)) if (ALIAS[k].some(a => t.includes(a))) return ALIAS[k]; return [t]; };
+  const qs = expand(q);
+  let target = people.find(w => {
+    const rel = w.relationship.toLowerCase(), nm = w.name.toLowerCase();
+    return qs.some(a => a && (rel.includes(a) || (nm.length >= 2 && (nm.includes(a) || a.includes(nm)))));
+  });
+  if (!target && people.length === 1) target = people[0];
+  return target;
+}
+
+async function executeSendMessage(elderId: string, who: string, body: string): Promise<string> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase || elderId === "default") return JSON.stringify({ sent: false, error: "not logged in" });
+  const { watching, watchers } = await listLinks(supabase, elderId);
+  // anyone linked in either direction can be messaged
+  const people: LinkedPerson[] = [...watching, ...watchers.filter(w => !watching.some(x => x.userId === w.userId))];
+  if (!people.length) return JSON.stringify({ sent: false, reason: "no linked people", hint: "Explain they need to link first (get_my_link_code / link_person). If the person is a saved phone contact, offer compose_text (SMS) instead." });
+  const target = matchPerson(people, who);
+  if (!target) return JSON.stringify({ sent: false, reason: "no match", people: people.map(p => `${p.relationship} ${p.name}`), hint: "Ask which person they mean." });
+  const r = await sendElloMessage(elderId, target.userId, body);
+  if ("error" in r) return JSON.stringify({ sent: false, error: r.error });
+  return JSON.stringify({ sent: true, to: `${target.relationship} ${target.name}`.trim(), body, note: "Confirm in one short sentence, e.g. '수진이한테 보냈어요. 수진이 엘로가 읽어줄 거예요.'" });
+}
+
 async function executeCheckOnPerson(elderId: string, who: string, timezone: string): Promise<string> {
   const supabase = getSupabaseAdmin();
   if (!supabase || elderId === "default") return JSON.stringify({ error: "not logged in" });
   const { watching } = await listLinks(supabase, elderId);
   if (!watching.length) return JSON.stringify({ found: false, hint: "The user has no linked people yet. Offer get_my_link_code (so family can link to them) or link_person (if they have someone's code)." });
-  const q = String(who || "").trim().toLowerCase();
-  const ALIAS: Record<string, string[]> = { 엄마: ["어머니", "엄마", "어머님", "모친"], 아빠: ["아버지", "아빠", "아버님", "부친"], 딸: ["딸", "따님"], 아들: ["아들", "아드님"], 남편: ["남편", "영감"], 아내: ["아내", "와이프", "집사람", "할멈"] };
-  const expand = (t: string) => { for (const k of Object.keys(ALIAS)) if (ALIAS[k].some(a => t.includes(a))) return ALIAS[k]; return [t]; };
-  const qs = expand(q);
-  let target = watching.find(w => {
-    const rel = w.relationship.toLowerCase(), nm = w.name.toLowerCase();
-    return qs.some(a => a && (rel.includes(a) || (nm.length >= 2 && (nm.includes(a) || a.includes(nm)))));
-  });
-  if (!target && watching.length === 1) target = watching[0];
+  const target = matchPerson(watching, who);
   if (!target) return JSON.stringify({ found: false, people: watching.map(w => `${w.relationship} ${w.name}`), hint: "Ask which person they mean." });
   const c = await buildCheckin(elderId, target.userId, timezone);
   if ("error" in c) return JSON.stringify({ found: false, error: c.error });
@@ -1351,6 +1379,17 @@ export async function POST(req: NextRequest) {
         if (watchers.length) watcherList = watchers.map(w => `${w.relationship} ${w.name}`.trim()).join(", ");
       }
     } catch { /* links are optional */ }
+    // 엘로 메시지: unread messages from linked people are read to the user in this turn, then marked read
+    let unreadList = "(none)";
+    try {
+      if (elderId !== "default") {
+        const unread = await unreadFor(elderId);
+        if (unread.length) {
+          unreadList = unread.map(m => `${m.fromRelationship || ""} ${m.fromName || ""}`.trim() + `: "${m.body}"`).join(" | ");
+          await markRead(elderId, unread.map(m => m.id));
+        }
+      }
+    } catch { /* messages are optional */ }
     const adminDb = getSupabaseAdmin();
     if (elderId !== "default" && adminDb) {
       const { data: mems } = await adminDb
@@ -1432,6 +1471,11 @@ WHAT IS ON THE USER'S PHONE RIGHT NOW:
 
 LINKED PEOPLE (people the user can check on with check_on_person): ${linkedList}
 People who can see the user's day: ${watcherList}
+UNREAD MESSAGES sent to the user through 엘로 by linked people: ${unreadList}
+${cc.incoming ? `MESSAGE THE USER JUST HEARD (from ${cc.incoming.from}): "${cc.incoming.body}" — if the user's words answer it (알았어, 그래, 3시에 와, 고마워...), call send_message_to_person to ${cc.incoming.from} with the reply in the user's words.` : ""}
+- If UNREAD MESSAGES is not (none): FIRST tell the user, warmly and briefly, who sent what (read the message text as-is), then ask if they want to reply. Do this before anything else in your answer.
+- When the user answers a message ("알았다고 해", "응, 3시에 오라고 해", "고맙다고 전해줘") → send_message_to_person to that sender, body in the user's words.
+- "엄마한테 내일 3시에 갈게라고 전해줘/보내줘/말해줘" → send_message_to_person (the person is LINKED; their 엘로 reads it aloud). Use compose_text (SMS) only when the user says 문자/text explicitly or the person is not linked.
 - "엄마 오늘 약 드셨어?", "아버지 잘 계셔?", "딸 요즘 어때?" → check_on_person. Never guess; if no one is linked, explain how to link (get_my_link_code / link_person).
 - "딸이랑 연결해줘" / "내 연결 번호" → get_my_link_code. "번호 48 21 07 연결해" → link_person.
 - "약 먹었어" → log_medication_taken (then confirm). Do NOT call add_medication_reminder for this.

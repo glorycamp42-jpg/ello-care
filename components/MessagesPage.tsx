@@ -38,6 +38,7 @@ export default function MessagesPage({ onClose, contacts: contactsProp, initialT
   const [explained, setExplained] = useState<Explained | null>(null);
   const [imgBusy, setImgBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
 
   /* write */
   const [to, setTo] = useState<{ name: string; phone: string } | null>(null);
@@ -178,11 +179,17 @@ export default function MessagesPage({ onClose, contacts: contactsProp, initialT
 
         {tab === "read" && (<>
           {!explained && (
-            <Card><span className="text-[22px] leading-[1.4] text-[#2B211C]">문자 앱에서 문자를 <b>길게 눌러 복사</b>한 뒤 <b>붙여넣기</b>를 누르세요. 편지·고지서·스크린샷은 <b>사진</b>으로 올리세요.</span></Card>
+            <Card><span className="text-[22px] leading-[1.4] text-[#2B211C]">편지·고지서는 <b>사진 찍기</b>를 누르면 카메라가 바로 열려요. 문자는 문자 앱에서 <b>길게 눌러 복사</b>한 뒤 <b>붙여넣기</b>.</span></Card>
           )}
+          {/* 편지·고지서가 오면 카메라가 바로 열려야 한다 — 파일 고르기 화면이 아니라 */}
+          <button onClick={() => cameraRef.current?.click()} disabled={busy || imgBusy} className="h-[96px] rounded-[22px] bg-[#FF6B35] text-white text-[24px] font-bold active:scale-[0.98] disabled:opacity-60 flex items-center justify-center gap-3">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
+            {imgBusy ? "읽는 중…" : "편지·서류 사진 찍기"}
+          </button>
+          <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={onPhoto} className="hidden" />
           <div className="grid grid-cols-2 gap-3">
-            <button onClick={pasteFromClipboard} disabled={busy} className="h-[84px] rounded-[22px] bg-[#FF6B35] text-white text-[22px] font-bold active:scale-[0.98] disabled:opacity-60">붙여넣기</button>
-            <button onClick={() => fileRef.current?.click()} disabled={busy || imgBusy} className="h-[84px] rounded-[22px] bg-white border-2 border-[#D9CCC0] text-[#2B211C] text-[22px] font-bold active:scale-[0.98] disabled:opacity-60">{imgBusy ? "읽는 중…" : "사진·스크린샷"}</button>
+            <button onClick={pasteFromClipboard} disabled={busy} className="h-[72px] rounded-[22px] bg-white border-2 border-[#D9CCC0] text-[#2B211C] text-[20px] font-bold active:scale-[0.98] disabled:opacity-60">문자 붙여넣기</button>
+            <button onClick={() => fileRef.current?.click()} disabled={busy || imgBusy} className="h-[72px] rounded-[22px] bg-white border-2 border-[#D9CCC0] text-[#2B211C] text-[20px] font-bold active:scale-[0.98] disabled:opacity-60">앨범·스크린샷</button>
             <input ref={fileRef} type="file" accept="image/*" onChange={onPhoto} className="hidden" />
           </div>
           <textarea value={incoming} onChange={e => setIncoming(e.target.value)} placeholder="또는 여기에 영어 문자를 붙여넣으세요" rows={3}

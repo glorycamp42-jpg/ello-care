@@ -42,6 +42,21 @@ export default function LinksPage({ onClose, onAsk, initialCode }: { onClose: ()
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [status, setStatus] = useState<Record<string, Checkin | "loading" | undefined>>({});
+  const [msgText, setMsgText] = useState<Record<string, string>>({});
+  const [msgSent, setMsgSent] = useState<Record<string, string>>({});
+
+  async function sendMsg(p: Person) {
+    const body = (msgText[p.userId] || "").trim();
+    if (!body) return;
+    setBusy(true); setErr("");
+    try {
+      const res = await fetch("/api/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: p.userId, body }) });
+      const data = await res.json();
+      if (data.ok) { setMsgSent(m => ({ ...m, [p.userId]: `보냈어요 — ${p.relationship} ${p.name}님의 엘로가 읽어드려요.` })); setMsgText(m => ({ ...m, [p.userId]: "" })); }
+      else setErr(data.error || "보내지 못했어요.");
+    } catch { setErr("보내지 못했어요."); }
+    setBusy(false);
+  }
 
   async function load() {
     try {
@@ -165,6 +180,13 @@ export default function LinksPage({ onClose, onAsk, initialCode }: { onClose: ()
                           <button onClick={() => checkin(p)} className={`${BTN} bg-[#FF6B35] text-white`}>{st === "loading" ? "보는 중…" : "오늘 어때요?"}</button>
                           {onAsk && <button onClick={() => onAsk(`${p.relationship} 오늘 어때? 약은 드셨어?`)} className={`${BTN} bg-white border-2 border-[#D9CCC0] text-[#2B211C]`}>엘로에게 묻기</button>}
                         </div>
+                        {/* 엘로 메시지: 상대 엘로가 읽어준다. 말로 보내려면 홈에서 "○○한테 ~라고 전해줘" */}
+                        <div className="flex gap-2 mt-3">
+                          <input value={msgText[p.userId] || ""} onChange={e => setMsgText(m => ({ ...m, [p.userId]: e.target.value }))} placeholder={`${p.relationship}께 메시지 (엘로가 읽어줘요)`}
+                            className="flex-1 min-w-0 h-14 px-4 rounded-2xl bg-[#FFF8EE] border-2 border-[#D9CCC0] text-[18px] text-[#2B211C] focus:outline-none focus:border-[#FF6B35]" />
+                          <button onClick={() => sendMsg(p)} disabled={busy || !(msgText[p.userId] || "").trim()} className="h-14 px-5 rounded-2xl bg-[#1F7A47] text-white text-[18px] font-bold disabled:opacity-50">보내기</button>
+                        </div>
+                        {msgSent[p.userId] && <p className="text-[16px] font-bold text-[#1F7A47] mt-2">{msgSent[p.userId]}</p>}
                         {st && st !== "loading" && (
                           <div className="mt-3 flex flex-col gap-2 text-[19px] leading-[1.45] text-[#2B211C]">
                             {st.sos && <div className="rounded-xl bg-[#FDE2E1] text-[#B42318] font-bold px-3 py-2">긴급 알림이 {fmtT(st.sos.at)}부터 켜져 있어요. 바로 전화해 보세요.</div>}

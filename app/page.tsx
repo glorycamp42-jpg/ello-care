@@ -60,11 +60,14 @@ function saveContacts(list: FamilyContact[]) {
   try { localStorage.setItem("ello-family-contacts", JSON.stringify(list)); } catch {}
 }
 /* What the phone knows — sent with every message so 엘로 can act on it */
+// the last 엘로 message the user heard (so "알았다고 해" is understood as a reply to that person)
+let lastIncoming: { from: string; body: string; at: number } | null = null;
 function buildClientContext() {
   return {
     contacts: loadContacts().map(c => ({ name: c.name, relation: c.relation })),
     medications: loadMeds().filter(m => m.enabled).map(m => ({ name: m.name, times: m.times })),
     fontSize: FONT_LABELS[loadFontIdx()],
+    incoming: lastIncoming && Date.now() - lastIncoming.at < 15 * 60 * 1000 ? { from: lastIncoming.from, body: lastIncoming.body } : undefined,
   };
 }
 type ClientAction = { type: string } & Record<string, unknown>;
@@ -234,6 +237,39 @@ export default function Home() {
     setToday((ahead.length > 0 ? ahead : items).slice(0, 3));
   }
   useEffect(() => { loadToday(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [userId, showReminders, showMedications]);
+  // 엘로 메시지: 연결된 사람이 보낸 메시지가 오면 엘로가 먼저 읽어준다 (앱이 열려 있을 때, 45초마다 + 앱 복귀 시)
+  const announcingRef = useRef(false);
+  useEffect(() => {
+    if (!userId || userId === "default") return;
+    let stopped = false;
+    const check = async () => {
+      if (stopped || announcingRef.current || isLoading || isListening || isSpeaking) return;
+      if (showSettings || showReminders || showHealthWallet || showMedications || showSafety || showLinks || showInterpreter || showMessages) return;
+      try {
+        const res = await fetch("/api/messages?unread=1", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        const unread: { id: string; body: string; fromName?: string; fromRelationship?: string }[] = data.unread || [];
+        if (!unread.length) return;
+        announcingRef.current = true;
+        const who = (m: typeof unread[number]) => `${m.fromRelationship || ""} ${m.fromName || ""}`.trim() || "가족";
+        const spoken = unread.map(m => `${who(m)}이 메시지를 보냈어요. "${m.body}"`).join(" ") + " 답장하시려면 마이크를 누르고 말씀하세요.";
+        const last = unread[unread.length - 1];
+        lastIncoming = { from: who(last), body: last.body, at: Date.now() };
+        setMessages(prev => [...prev, { role: "assistant", content: spoken }]);
+        setLastAssistantText(spoken);
+        await fetch("/api/messages", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: unread.map(m => m.id) }) }).catch(() => {});
+        await playTTS(spoken);
+      } catch {} finally { announcingRef.current = false; }
+    };
+    const first = setTimeout(check, 8000); // the greeting turn already reads unread messages; give it a head start
+    const iv = setInterval(check, 45000);
+    const onVis = () => { if (document.visibilityState === "visible") check(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { stopped = true; clearTimeout(first); clearInterval(iv); document.removeEventListener("visibilitychange", onVis); };
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [userId, isLoading, isListening, isSpeaking, showSettings, showReminders, showHealthWallet, showMedications, showSafety, showLinks, showInterpreter, showMessages]);
+
   // keep the phone's medication cache fresh (every 10 min + when the app comes back to the front)
   useEffect(() => {
     if (!userId) return;
